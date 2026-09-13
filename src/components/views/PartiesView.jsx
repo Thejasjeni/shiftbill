@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Users, Plus, Phone, Search, FileText, X, UserPlus } from 'lucide-react';
+import { Users, Plus, Phone, Search, FileText, X, UserPlus, Building2 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
+import VendorForm from './VendorForm';
 
 export default function PartiesView() {
   const { currentData, setActiveReportModal, addParty } = useDashboard();
   const [filterType, setFilterType] = useState('All');
   const [search, setSearch] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isVendorRegistryOpen, setIsVendorRegistryOpen] = useState(false);
 
   // New party form state
   const [name, setName] = useState('');
@@ -58,14 +60,32 @@ export default function PartiesView() {
           <h1 className="text-lg sm:text-xl font-bold text-slate-900">Parties & Ledgers</h1>
           <p className="text-xs text-slate-500">Manage customers, suppliers and outstanding balances</p>
         </div>
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-xs cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Party</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsVendorRegistryOpen(o => !o)}
+            className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold shadow-xs cursor-pointer border transition-all ${
+              isVendorRegistryOpen
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
+            }`}
+          >
+            <Building2 className="w-4 h-4" />
+            <span>Vendor Registry</span>
+          </button>
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-xs cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Party</span>
+          </button>
+        </div>
       </div>
+
+      {/* Supabase-backed Vendor/Client Registry (collapsible) */}
+      {isVendorRegistryOpen && (
+        <VendorForm />
+      )}
 
       {/* Filter Tabs & Search */}
       <div className="flex flex-col sm:flex-row items-center gap-3">

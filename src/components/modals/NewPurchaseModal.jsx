@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
-import { X, ShoppingCart, IndianRupee, Building, Loader2 } from 'lucide-react';
+import { X, ShoppingCart, IndianRupee, Building, Loader2, Package } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
+import { useProducts } from '../../hooks/useProducts';
+import SearchableProductSelect from '../ui/SearchableProductSelect';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function NewPurchaseModal() {
   const { isAddPurchaseOpen, setIsAddPurchaseOpen, addPurchase, isSupabaseConfigured } = useDashboard();
+  const { products, isLoading: isLoadingProducts, error: productsError } = useProducts();
 
   const [supplierName, setSupplierName] = useState('');
+  const [product, setProduct] = useState(null);
+  const [qty, setQty] = useState('');
   const [amount, setAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -20,6 +26,14 @@ export default function NewPurchaseModal() {
       return;
     }
 
+    // Product selection is optional, but a picked product needs a quantity
+    // so its stock can be incremented.
+    const qtyNum = Number(qty);
+    if (product && (!qty || Number.isNaN(qtyNum) || qtyNum <= 0)) {
+      alert("Please enter the quantity received for the selected product");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       await addPurchase({
@@ -28,7 +42,19 @@ export default function NewPurchaseModal() {
         type: 'purchase'
       });
 
+      // Stock-in: atomically bump inventory server-side via RPC
+      // (client-computed totals would race with concurrent edits)
+      if (product && isSupabaseConfigured && supabase) {
+        const { error: stockErr } = await supabase.rpc('increment_inventory_stock', {
+          p_id: product.id,
+          p_delta: qtyNum
+        });
+        if (stockErr) console.warn('Stock update failed:', stockErr.message);
+      }
+
       setSupplierName('');
+      setProduct(null);
+      setQty('');
       setAmount('');
       setIsAddPurchaseOpen(false);
     } catch (err) {
@@ -51,7 +77,7 @@ export default function NewPurchaseModal() {
             <div className="text-left">
               <h3 className="font-bold text-base leading-tight">Add Purchase Transaction</h3>
               <p className="text-[11px] text-slate-300">
-                {isSupabaseConfigured ? 'Syncs directly to Supabase' : 'Stores in local session'}
+                {isSupabaseConfigured ? 'Syncs to Supabase · pick a product to auto-add stock' : 'Stores in local session'}
               </p>
             </div>
           </div>
@@ -83,6 +109,39 @@ export default function NewPurchaseModal() {
               />
             </div>
           </div>
+
+          {/* Product picker (searchable dropdown from database) */}
+          <SearchableProductSelect
+            products={products}
+            value={product}
+            onChange={setProduct}
+            isLoading={isLoadingProducts}
+            error={productsError}
+          />
+
+          {/* Quantity — only relevant when a product is selected */}
+          {product && (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Quantity Received ({product.unit})
+              </label>
+              <div className="relative">
+                <Package className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder="e.g. 10"
+                  value={qty}
+                  onChange={(e) => setQty(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Stock will be incremented automatically on save.
+              </p>
+            </div>
+          )}
 
           {/* Amount Field */}
           <div>
