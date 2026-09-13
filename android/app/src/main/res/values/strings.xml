@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SwiftBill</string>
+    <string name="title_activity_main">SwiftBill</string>
+    <string name="package_name">com.swiftbill.app</string>
+    <string name="custom_url_scheme">com.swiftbill.app</string>
+</resources>
