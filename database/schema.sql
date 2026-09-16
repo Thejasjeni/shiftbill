@@ -70,6 +70,14 @@ create policy "vendors_anon_all" on public.vendors for all using (true) with che
 --   to authenticated using (true) with check (true);
 
 -- ---------------------------------------------------------------------------
+-- 2b) Allow 'expense' transaction type (petrol, rent, utilities...)
+--     Applied to the live project via migration allow_expense_transaction_type
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_type_check;
+ALTER TABLE public.transactions ADD CONSTRAINT transactions_type_check
+  CHECK (type = ANY (ARRAY['sale'::text, 'purchase'::text, 'expense'::text]));
+
+-- ---------------------------------------------------------------------------
 -- 3) Atomic stock-in for purchases (works with the EXISTING inventory table)
 --    Client-computed totals race; this RPC updates server-side atomically.
 -- ---------------------------------------------------------------------------
