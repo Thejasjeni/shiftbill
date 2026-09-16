@@ -35,7 +35,6 @@ export function DashboardProvider({ children }) {
   const [isAddPurchaseOpen, setIsAddPurchaseOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [activeReportModal, setActiveReportModal] = useState(null);
-  const [isBannerDismissed, setIsBannerDismissed] = useState(false);
   const [activeNavTab, setActiveNavTab] = useState('home');
 
   // Supabase & Offline-first connection state
@@ -428,8 +427,6 @@ export function DashboardProvider({ children }) {
     setIsUpgradeModalOpen,
     activeReportModal,
     setActiveReportModal,
-    isBannerDismissed,
-    setIsBannerDismissed,
     activeNavTab,
     setActiveNavTab,
     businessInfo,

@@ -3,7 +3,6 @@ import { DashboardProvider, useDashboard } from './context/DashboardContext';
 import TopAppBar from './components/layout/TopAppBar';
 import Sidebar from './components/layout/Sidebar';
 import BottomNav from './components/layout/BottomNav';
-import AlertBanner from './components/layout/AlertBanner';
 import FinancialSummaryCards from './components/dashboard/FinancialSummaryCards';
 import SalesChartSection from './components/dashboard/SalesChartSection';
 import QuickReportsGrid from './components/dashboard/QuickReportsGrid';
@@ -115,9 +114,6 @@ function DashboardContent() {
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         {/* Sticky Top App Bar */}
         <TopAppBar />
-
-        {/* Dismissible Red/Pink Alert Banner */}
-        <AlertBanner />
 
         {/* Scrollable Dashboard Body */}
         <main className="flex-1 overflow-y-auto p-3.5 sm:p-6 pb-28 lg:pb-12 max-w-7xl w-full mx-auto">
