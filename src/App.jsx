@@ -10,6 +10,7 @@ import RecentTransactionsList from './components/dashboard/RecentTransactionsLis
 import FloatingActionButton from './components/dashboard/FloatingActionButton';
 import NewSaleModal from './components/modals/NewSaleModal';
 import NewPurchaseModal from './components/modals/NewPurchaseModal';
+import NewExpenseModal from './components/modals/NewExpenseModal';
 import ReportViewerModal from './components/modals/ReportViewerModal';
 import PremiumUpgradeModal from './components/modals/PremiumUpgradeModal';
 import SearchDrawer from './components/modals/SearchDrawer';
@@ -129,6 +130,7 @@ function DashboardContent() {
         {/* Modals & Overlays */}
         <NewSaleModal />
         <NewPurchaseModal />
+        <NewExpenseModal />
         <ReportViewerModal />
         <PremiumUpgradeModal />
         <SearchDrawer />

@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, PlusCircle, ShoppingCart, Menu } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ShoppingCart, Menu, Fuel } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 
 export default function BottomNav() {
@@ -9,12 +9,13 @@ export default function BottomNav() {
     setIsAddSaleOpen,
     setIsCheckoutOpen,
     setIsAddPurchaseOpen,
+    setIsAddExpenseOpen,
     setIsMobileDrawerOpen,
   } = useDashboard();
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-white border-t border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] pb-safe">
-      <div className="grid grid-cols-4 h-16 max-w-md mx-auto items-center px-2">
+      <div className="grid grid-cols-5 h-16 max-w-md mx-auto items-center px-2">
         {/* 1. Home Tab */}
         <button
           onClick={() => setActiveNavTab('home')}
@@ -55,6 +56,18 @@ export default function BottomNav() {
             <ShoppingCart className="w-5 h-5" />
           </div>
           <span className="text-[11px] font-medium tracking-tight mt-0.5 text-purple-700">Add Purchase</span>
+        </button>
+
+        {/* 3b. Add Expense (Petrol etc.) */}
+        <button
+          onClick={() => setIsAddExpenseOpen(true)}
+          className="flex flex-col items-center justify-center h-full text-amber-600 hover:text-amber-700 active:scale-95 transition-colors cursor-pointer"
+          aria-label="Add Expense"
+        >
+          <div className="p-1 rounded-xl bg-amber-50 text-amber-600">
+            <Fuel className="w-5 h-5" />
+          </div>
+          <span className="text-[11px] font-medium tracking-tight mt-0.5 text-amber-700">Expense</span>
         </button>
 
         {/* 4. Menu Drawer Tab */}

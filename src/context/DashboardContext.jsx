@@ -40,6 +40,7 @@ export function DashboardProvider({ children }) {
   const [isAddSaleOpen, setIsAddSaleOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false); // Slide-up Checkout Bottom Sheet
   const [isAddPurchaseOpen, setIsAddPurchaseOpen] = useState(false);
+  const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [activeReportModal, setActiveReportModal] = useState(null);
   const [activeNavTab, setActiveNavTab] = useState('home');
@@ -199,6 +200,18 @@ export function DashboardProvider({ children }) {
       .reduce((sum, t) => sum + Number(t.amount || 0), 0);
   }, [transactions]);
 
+  // Expenses (e.g. petrol) reduce profit but are NOT supplier payables
+  const totalExpense = useMemo(() => {
+    return transactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  }, [transactions]);
+
+  // Profit = sales − expenses (purchases are stock-in, not profit-reducing)
+  const totalProfit = useMemo(() => {
+    return totalReceivable - totalExpense;
+  }, [totalReceivable, totalExpense]);
+
   const totalSale = totalReceivable;
 
   // Sales timeline derived from REAL transaction dates for the selected range
@@ -223,23 +236,28 @@ export function DashboardProvider({ children }) {
     const buckets = Array.from({ length: bucketCount }, (_, i) => {
       const d = new Date(rangeStart);
       d.setDate(rangeStart.getDate() + Math.floor(i * days / bucketCount));
-      return { date: d, amount: 0 };
+      return { date: d, amount: 0, expense: 0 };
     });
 
     const cutoff = days > 28 ? new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()) : rangeStart;
     transactions.forEach(tx => {
-      if (tx.type !== 'sale') return;
+      if (tx.type !== 'sale' && tx.type !== 'expense') return;
       const d = new Date(tx.created_at || tx.date);
       if (isNaN(d.getTime()) || d < cutoff) return;
       const amt = Number(tx.amount) || 0;
       let target = buckets[0];
       for (const b of buckets) { if (d >= b.date) target = b; else break; }
-      target.amount += amt;
+      if (tx.type === 'sale') {
+        target.amount += amt;
+      } else {
+        target.expense += amt;
+      }
     });
 
     return buckets.map(b => ({
       date: b.date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
-      amount: b.amount
+      amount: b.amount,
+      profit: b.amount - b.expense
     }));
   }, [transactions, salesTimeRange]);
 
@@ -253,11 +271,13 @@ export function DashboardProvider({ children }) {
       bankBalance: 0,
       stockValue: items.reduce((sum, itm) => sum + (Number(itm.retail_price || itm.price || 0) * Number(itm.stock_quantity || itm.stock || 0)), 0),
       salesTimeline,
+      totalExpense,
+      totalProfit,
       transactions,
       parties,
       items
     };
-  }, [totalReceivable, totalPayable, totalSale, transactions, parties, items, salesTimeline]);
+  }, [totalReceivable, totalPayable, totalSale, totalExpense, totalProfit, transactions, parties, items, salesTimeline]);
 
   // 3. Add Sale: Saves locally first, then syncs to Supabase
   const addSale = async (saleData) => {
@@ -294,6 +314,55 @@ export function DashboardProvider({ children }) {
             party_name: partyName,
             pricing_tier: newRecord.pricing_tier,
             payment_mode: newRecord.payment_mode,
+            items_json: newRecord.items_json
+          }])
+          .select()
+          .single();
+
+        if (!error && inserted) {
+          await markTransactionSynced(newRecord.id, inserted);
+          setTransactions(prev => prev.map(t => (t.id === newRecord.id ? { ...inserted, synced: true } : t)));
+          await syncWithSupabase();
+          setLastSynced(new Date().toLocaleTimeString());
+        }
+      } catch (e) {
+        console.warn('Network sync postponed:', e);
+      }
+    }
+  };
+
+  // 4b. Add Expense (e.g. petrol): local-first, mirrors addSale/addPurchase
+  const addExpense = async (expenseData) => {
+    const desc = expenseData.description || 'General Expense';
+    const amount = Number(expenseData.amount);
+
+    const newRecord = {
+      id: expenseData.id || `local-${Date.now()}-exp`,
+      amount,
+      type: 'expense',
+      party_name: desc,
+      payment_mode: 'Cash',
+      items_json: [{ name: desc, category: expenseData.category || 'other', quantity: 1, rate: amount, total: amount }],
+      created_at: new Date().toISOString(),
+      synced: false
+    };
+
+    // Save locally first (works offline, shows in Recent Transactions)
+    await saveLocalTransaction(newRecord);
+    setTransactions(prev => [newRecord, ...prev]);
+    await refreshPendingCount();
+
+    // If online, insert remotely and swap the temp local row for the server
+    // row BEFORE the next sync (same duplication guard as addSale)
+    if (navigator.onLine && isSupabaseConfigured) {
+      try {
+        const { data: inserted, error } = await supabase
+          .from('transactions')
+          .insert([{
+            amount,
+            type: 'expense',
+            party_name: desc,
+            payment_mode: 'Cash',
             items_json: newRecord.items_json
           }])
           .select()
@@ -517,6 +586,8 @@ export function DashboardProvider({ children }) {
     setIsCheckoutOpen,
     isAddPurchaseOpen,
     setIsAddPurchaseOpen,
+    isAddExpenseOpen,
+    setIsAddExpenseOpen,
     isUpgradeModalOpen,
     setIsUpgradeModalOpen,
     activeReportModal,
@@ -528,6 +599,7 @@ export function DashboardProvider({ children }) {
     currentData,
     addSale,
     addPurchase,
+    addExpense,
     deleteTransaction,
     addParty,
     upsertItem,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, ChevronDown, TrendingUp, Info } from 'lucide-react';
+import { Calendar, ChevronDown, TrendingUp, Info, Wallet } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 
 export default function SalesChartSection() {
@@ -52,19 +52,26 @@ export default function SalesChartSection() {
     const x = paddingX + (index / (timeline.length - 1)) * (svgWidth - paddingX * 2);
     const normalizedY = item.amount / maxAmount;
     const y = (svgHeight - paddingY) - normalizedY * (svgHeight - paddingY * 2);
-    return { ...item, x, y };
+    // Profit uses the same scale so the two lines are directly comparable
+    const normalizedYProfit = item.profit / maxAmount;
+    const yProfit = (svgHeight - paddingY) - normalizedYProfit * (svgHeight - paddingY * 2);
+    return { ...item, x, y, yProfit };
   });
 
-  // Create smooth SVG cubic bezier path
-  const linePath = points.reduce((acc, point, index) => {
-    if (index === 0) return `M ${point.x} ${point.y}`;
+  // Create smooth SVG cubic bezier paths (sales + profit)
+  const buildSmoothPath = (key) => points.reduce((acc, point, index) => {
+    const yVal = point[key];
+    if (index === 0) return `M ${point.x} ${yVal}`;
     const prev = points[index - 1];
     const cp1x = prev.x + (point.x - prev.x) / 2;
-    const cp1y = prev.y;
+    const cp1y = prev[key];
     const cp2x = prev.x + (point.x - prev.x) / 2;
-    const cp2y = point.y;
-    return `${acc} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${point.x} ${point.y}`;
+    const cp2y = yVal;
+    return `${acc} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${point.x} ${yVal}`;
   }, '');
+
+  const linePath = buildSmoothPath('y');
+  const profitPath = buildSmoothPath('yProfit');
 
   // Area path closing at the bottom
   const areaPath = `${linePath} L ${points[points.length - 1].x} ${svgHeight - paddingY} L ${points[0].x} ${svgHeight - paddingY} Z`;
@@ -150,6 +157,14 @@ export default function SalesChartSection() {
               </linearGradient>
             </defs>
 
+            {/* Legend */}
+            <g>
+              <rect x={paddingX} y="2" width="8" height="3" rx="1.5" fill="#4F46E5" />
+              <text x={paddingX + 12} y="6" fontSize="7" fill="#64748B">Sales</text>
+              <rect x={paddingX + 52} y="2" width="8" height="3" rx="1.5" fill="#F59E0B" />
+              <text x={paddingX + 64} y="6" fontSize="7" fill="#64748B">Profit</text>
+            </g>
+
             {/* Subtle Horizontal Grid lines */}
             {[0.25, 0.5, 0.75, 1.0].map((ratio, i) => {
               const y = (svgHeight - paddingY) - ratio * (svgHeight - paddingY * 2);
@@ -179,6 +194,31 @@ export default function SalesChartSection() {
 
             {/* Area Fill */}
             <path d={areaPath} fill="url(#salesGradient)" />
+
+            {/* Profit line (sales − expenses per bucket) */}
+            <path
+              d={profitPath}
+              fill="none"
+              stroke="#F59E0B"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="6 3"
+            />
+
+            {/* Profit points */}
+            {points.map((pt, i) => (
+              <circle
+                key={`p-${i}`}
+                cx={pt.x}
+                cy={pt.yProfit}
+                r="2.5"
+                fill="#FFFFFF"
+                stroke="#F59E0B"
+                strokeWidth="2"
+                className="pointer-events-none"
+              />
+            ))}
 
             {/* Line Path */}
             <path
