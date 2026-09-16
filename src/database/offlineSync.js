@@ -201,6 +201,107 @@ export async function flushPendingVendors() {
   return synced;
 }
 
+// ---- Pending inventory operations (item inserts & edits) ----
+// Items added/edited in the Items view are local-first. Server-backed rows
+// (real `inventory` ids) replay their changes here when offline; new items
+// insert remotely and swap their temporary local id for the server row.
+const INVENTORY_OPS_KEY = 'swiftbill_pending_inventory_ops';
+
+export function getPendingInventoryOps() {
+  try {
+    return JSON.parse(localStorage.getItem(INVENTORY_OPS_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+export function queueInventoryOp(op) {
+  try {
+    const queue = getPendingInventoryOps();
+    queue.push({ ...op, queuedAt: new Date().toISOString() });
+    // Cap the queue so it can never grow unbounded
+    localStorage.setItem(INVENTORY_OPS_KEY, JSON.stringify(queue.slice(-300)));
+  } catch { /* ignore */ }
+}
+
+// An item added offline then edited before reconnect: refresh its queued
+// insert payload so the server receives the final values, not stale ones.
+export function updateQueuedInventoryInsert(tempId, newPayload) {
+  try {
+    const queue = getPendingInventoryOps().map(op =>
+      op.type === 'insert' && op.tempId === tempId ? { ...op, payload: newPayload } : op
+    );
+    localStorage.setItem(INVENTORY_OPS_KEY, JSON.stringify(queue));
+  } catch { /* ignore */ }
+}
+
+// Replace a temporary local inventory row with the authoritative server row
+// (same pattern as markTransactionSynced for transactions)
+export async function replaceLocalInventoryRow(tempId, serverRow) {
+  const db = await openLocalDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['inventory'], 'readwrite');
+    const store = tx.objectStore('inventory');
+    if (tempId && tempId !== serverRow.id) store.delete(tempId);
+    store.put({ ...serverRow });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// Replay queued inventory inserts/updates; failures stay queued.
+export async function flushInventoryOps() {
+  const ops = getPendingInventoryOps();
+  if (ops.length === 0) return 0;
+  let applied = 0;
+  const remaining = [];
+  for (const op of ops) {
+    try {
+      if (op.type === 'insert') {
+        const { data, error } = await supabase
+          .from('inventory')
+          .insert(op.payload)
+          .select()
+          .single();
+        if (!error && data) {
+          await replaceLocalInventoryRow(op.tempId, data);
+          applied++;
+        } else {
+          remaining.push(op);
+        }
+      } else {
+        const { error } = await supabase
+          .from('inventory')
+          .update(op.payload)
+          .eq('id', op.id);
+        if (!error) applied++;
+        else remaining.push(op);
+      }
+    } catch {
+      remaining.push(op);
+    }
+  }
+  try {
+    localStorage.setItem(INVENTORY_OPS_KEY, JSON.stringify(remaining));
+  } catch { /* ignore */ }
+  return applied;
+}
+
+// UI-friendly aliases over a raw inventory row. Remote rows only carry
+// item_name/retail_price/stock_quantity, while views also read
+// name/price/stock/unit — merge both shapes so every consumer works.
+export function normalizeItemForUI(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    name: row.name || row.item_name || 'Unnamed item',
+    price: Number(row.retail_price ?? row.price ?? 0) || 0,
+    stock: Number(row.stock_quantity ?? row.stock ?? 0) || 0,
+    unit: row.unit || 'Pcs',
+    code: row.code || row.barcode || ''
+  };
+}
+
 // Mark transaction as synced, optionally merging the server-generated row in
 // place of the temporary local one (keeps IDs unique, avoids duplicates).
 export async function markTransactionSynced(id, remoteRow = null) {
@@ -325,14 +426,22 @@ export async function syncWithSupabase() {
       }
     }
 
-    // 3. Pull latest inventory from Supabase and cache locally
+    // 3. Replay item inserts/edits queued while offline BEFORE pulling, so
+    //    the pull returns our own changes instead of clobbering them
+    await flushInventoryOps();
+
+    // Pull latest inventory from Supabase and cache locally, skipping rows
+    // that still have pending local ops (failed flush — retry next sync)
+    const pendingInvIds = new Set(
+      getPendingInventoryOps().map(o => String(o.type === 'insert' ? o.tempId : o.id)).filter(Boolean)
+    );
     const { data: remoteInv, error: invErr } = await supabase
       .from('inventory')
       .select('*')
       .order('item_name');
 
     if (!invErr && remoteInv) {
-      await saveLocalInventory(remoteInv);
+      await saveLocalInventory(remoteInv.filter(r => !pendingInvIds.has(String(r.id))));
     }
 
     // 4. Retry remote deletes that previously failed while offline

@@ -11,7 +11,12 @@ import {
   markTransactionSynced,
   rememberDeletedTx,
   getPendingStockDeltas,
-  getPendingVendors
+  getPendingVendors,
+  getPendingInventoryOps,
+  queueInventoryOp,
+  updateQueuedInventoryInsert,
+  replaceLocalInventoryRow,
+  normalizeItemForUI
 } from '../database/offlineSync';
 
 const DashboardContext = createContext();
@@ -112,7 +117,7 @@ export function DashboardProvider({ children }) {
 
       const cachedInv = await getLocalInventory();
       if (cachedInv && cachedInv.length > 0) {
-        setItems(cachedInv);
+        setItems(cachedInv.map(normalizeItemForUI));
       }
 
       // If online and Supabase configured, perform background bi-directional sync
@@ -127,7 +132,7 @@ export function DashboardProvider({ children }) {
           setTransactions(refreshedTxs.sort((a, b) => new Date(b.created_at || b.date) - new Date(a.created_at || a.date)));
 
           const refreshedInv = await getLocalInventory();
-          if (refreshedInv.length > 0) setItems(refreshedInv);
+          if (refreshedInv.length > 0) setItems(refreshedInv.map(normalizeItemForUI));
         }
       }
       await refreshPendingCount();
@@ -399,8 +404,92 @@ export function DashboardProvider({ children }) {
     setParties(prev => [{ id: `P-${Date.now()}`, ...party }, ...prev]);
   };
 
-  const addItem = (item) => {
-    setItems(prev => [{ id: `ITM-${Date.now()}`, ...item }, ...prev]);
+  // 6. Items: add or edit. Local-first (IndexedDB + localStorage) so the UI
+  // updates instantly and survives offline; server-backed rows replay their
+  // change to Supabase (or queue it when offline) inside the next sync.
+  const upsertItem = async (item, existingId = null) => {
+    // Normalize into one shape (views read both legacy and canonical keys)
+    const normalized = {
+      name: item.name,
+      code: item.code || item.barcode || `SKU-${Math.floor(100 + Math.random() * 900)}`,
+      price: Number(item.price) || 0,
+      stock: Number(item.stock) || 0,
+      unit: item.unit || 'Pcs',
+      barcode: item.barcode || null,
+      retail_price: Number(item.price) || 0,
+      item_name: item.name,
+      stock_quantity: Number(item.stock) || 0
+    };
+
+    // Server columns for insert/update payloads. `wholesale_price` is NOT NULL
+    // in the inventory table — default to the POS's own 85%-of-retail fallback
+    // so items without an explicit wholesale price still insert cleanly.
+    const serverPayload = {
+      item_name: normalized.name,
+      retail_price: normalized.price,
+      wholesale_price: Number((normalized.price * 0.85).toFixed(2)),
+      stock_quantity: normalized.stock,
+      barcode: normalized.barcode
+    };
+
+    let idToUse = existingId;
+
+    if (existingId) {
+      // EDIT: merge so fields not exposed in the form survive
+      const prevItem = items.find(i => i.id === existingId) || {};
+      const updatedRow = { ...prevItem, ...normalized, id: existingId };
+      await saveLocalInventory([updatedRow]);
+      setItems(prev => prev.map(i => (i.id === existingId ? updatedRow : i)));
+
+      const hasTempId = String(existingId).startsWith('local-');
+      if (hasTempId) {
+        // Row was added offline: refresh its queued insert with final values
+        updateQueuedInventoryInsert(existingId, serverPayload);
+      } else if (isSupabaseConfigured && supabase) {
+        if (navigator.onLine) {
+          try {
+            const { error } = await supabase.from('inventory').update(serverPayload).eq('id', existingId);
+            if (error) queueInventoryOp({ type: 'update', id: existingId, payload: serverPayload });
+          } catch {
+            queueInventoryOp({ type: 'update', id: existingId, payload: serverPayload });
+          }
+        } else {
+          queueInventoryOp({ type: 'update', id: existingId, payload: serverPayload });
+        }
+      }
+    } else {
+      // ADD: temp id first (local-first), remote insert with id swap when online
+      const tempId = `local-${Date.now()}`;
+      const newRow = { id: tempId, ...normalized };
+      await saveLocalInventory([newRow]);
+      setItems(prev => [newRow, ...prev]);
+      idToUse = tempId;
+
+      if (isSupabaseConfigured && supabase && navigator.onLine) {
+        try {
+          const { data, error } = await supabase
+            .from('inventory')
+            .insert(serverPayload)
+            .select()
+            .single();
+          if (!error && data) {
+            await replaceLocalInventoryRow(tempId, data);
+            setItems(prev => prev.map(i => (i.id === tempId ? data : i)));
+            idToUse = data.id;
+          } else {
+            queueInventoryOp({ type: 'insert', tempId, payload: serverPayload });
+          }
+        } catch {
+          queueInventoryOp({ type: 'insert', tempId, payload: serverPayload });
+        }
+      } else {
+        // Offline: queue the insert so the row reaches Supabase on reconnect
+        queueInventoryOp({ type: 'insert', tempId, payload: serverPayload });
+      }
+    }
+
+    await refreshPendingCount();
+    return idToUse;
   };
 
   const manualSync = async () => {
@@ -441,7 +530,7 @@ export function DashboardProvider({ children }) {
     addPurchase,
     deleteTransaction,
     addParty,
-    addItem,
+    upsertItem,
     // Offline-First & Supabase states
     isSupabaseConfigured,
     isLoading,
