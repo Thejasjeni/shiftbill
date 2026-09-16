@@ -16,7 +16,9 @@ import {
   queueInventoryOp,
   updateQueuedInventoryInsert,
   replaceLocalInventoryRow,
-  normalizeItemForUI
+  normalizeItemForUI,
+  beginRemoteInsert,
+  endRemoteInsert
 } from '../database/offlineSync';
 
 const DashboardContext = createContext();
@@ -305,6 +307,7 @@ export function DashboardProvider({ children }) {
     // row BEFORE the next sync — otherwise the still-unsynced local copy gets
     // pushed again and the transaction is duplicated.
     if (navigator.onLine && isSupabaseConfigured) {
+      beginRemoteInsert(newRecord.id);
       try {
         const { data: inserted, error } = await supabase
           .from('transactions')
@@ -322,11 +325,11 @@ export function DashboardProvider({ children }) {
         if (!error && inserted) {
           await markTransactionSynced(newRecord.id, inserted);
           setTransactions(prev => prev.map(t => (t.id === newRecord.id ? { ...inserted, synced: true } : t)));
-          await syncWithSupabase();
-          setLastSynced(new Date().toLocaleTimeString());
         }
       } catch (e) {
         console.warn('Network sync postponed:', e);
+      } finally {
+        endRemoteInsert(newRecord.id);
       }
     }
   };
@@ -355,10 +358,11 @@ export function DashboardProvider({ children }) {
     // If online, insert remotely and swap the temp local row for the server
     // row BEFORE the next sync (same duplication guard as addSale)
     if (navigator.onLine && isSupabaseConfigured) {
+      beginRemoteInsert(newRecord.id);
       try {
         const { data: inserted, error } = await supabase
           .from('transactions')
-          .insert([{
+        .insert([{
             amount,
             type: 'expense',
             party_name: desc,
@@ -371,11 +375,11 @@ export function DashboardProvider({ children }) {
         if (!error && inserted) {
           await markTransactionSynced(newRecord.id, inserted);
           setTransactions(prev => prev.map(t => (t.id === newRecord.id ? { ...inserted, synced: true } : t)));
-          await syncWithSupabase();
-          setLastSynced(new Date().toLocaleTimeString());
         }
       } catch (e) {
         console.warn('Network sync postponed:', e);
+      } finally {
+        endRemoteInsert(newRecord.id);
       }
     }
   };
@@ -405,6 +409,7 @@ export function DashboardProvider({ children }) {
     // If online, insert remotely and swap the temp local row for the server
     // row BEFORE the next sync (same duplication guard as addSale)
     if (navigator.onLine && isSupabaseConfigured) {
+      beginRemoteInsert(newRecord.id);
       try {
         const { data: inserted, error } = await supabase
           .from('transactions')
@@ -422,11 +427,11 @@ export function DashboardProvider({ children }) {
         if (!error && inserted) {
           await markTransactionSynced(newRecord.id, inserted);
           setTransactions(prev => prev.map(t => (t.id === newRecord.id ? { ...inserted, synced: true } : t)));
-          await syncWithSupabase();
-          setLastSynced(new Date().toLocaleTimeString());
         }
       } catch (e) {
         console.warn('Network sync postponed:', e);
+      } finally {
+        endRemoteInsert(newRecord.id);
       }
     }
   };

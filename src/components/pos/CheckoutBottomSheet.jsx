@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   X,
   Camera,
@@ -16,9 +16,12 @@ import {
   Tags,
   IndianRupee,
   ShoppingBag,
-  ExternalLink
+  ExternalLink,
+  ChevronDown,
+  Users
 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
+import { useVendors } from '../../hooks/useVendors';
 import { generateUpiQrCodeDataUrl, generateInvoicePdf, shareInvoiceOnWhatsApp } from '../../utils/posUtilities';
 import BarcodeScannerModal from './BarcodeScannerModal';
 
@@ -32,11 +35,89 @@ const FALLBACK_INVENTORY = [
 
 export default function CheckoutBottomSheet({ isOpen, onClose }) {
   const { currentData, addSale, isSupabaseConfigured, businessInfo = {} } = useDashboard();
+  // Saved customers from the Supabase vendor registry (offline-safe: empty list
+  // when unreachable — local parties below still work)
+  const { vendors } = useVendors();
 
   // Customer & Pricing Tier state
   const [customerName, setCustomerName] = useState('Cash Customer');
   const [customerPhone, setCustomerPhone] = useState('');
   const [pricingTier, setPricingTier] = useState('retail'); // 'retail' or 'wholesale'
+
+  // Saved-customer picker state
+  const [isCustomerListOpen, setIsCustomerListOpen] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const customerListRef = useRef(null);
+
+  // Merge local parties + registry customers (deduped by name+phone)
+  const savedCustomers = useMemo(() => {
+    const partyCustomers = (currentData.parties || []).map(p => ({
+      key: `party-${p.id}`,
+      name: p.name,
+      phone: p.phone && p.phone !== '--' ? String(p.phone) : '',
+      source: 'Party'
+    }));
+    const registryCustomers = (vendors || [])
+      .filter(v => v.type === 'customer')
+      .map(v => ({
+        key: `vendor-${v.id}`,
+        name: v.name,
+        phone: v.phone ? String(v.phone) : '',
+        source: 'Registry'
+      }));
+    const seen = new Set();
+    return [...partyCustomers, ...registryCustomers].filter(c => {
+      if (!c.name) return false;
+      const k = `${c.name.toLowerCase()}|${c.phone}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }, [currentData.parties, vendors]);
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.toLowerCase();
+    if (!q) return savedCustomers;
+    return savedCustomers.filter(c =>
+      c.name.toLowerCase().includes(q) || String(c.phone).includes(q)
+    );
+  }, [savedCustomers, customerSearch]);
+
+  // Close the customer dropdown on outside click / Escape
+  useEffect(() => {
+    if (!isCustomerListOpen) return;
+    const handlePointer = (e) => {
+      if (customerListRef.current && !customerListRef.current.contains(e.target)) {
+        setIsCustomerListOpen(false);
+      }
+    };
+    const handleKey = (e) => { if (e.key === 'Escape') setIsCustomerListOpen(false); };
+    document.addEventListener('mousedown', handlePointer);
+    document.addEventListener('touchstart', handlePointer);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handlePointer);
+      document.removeEventListener('touchstart', handlePointer);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [isCustomerListOpen]);
+
+  const selectSavedCustomer = (c) => {
+    setCustomerName(c.name);
+    // Normalize to the 10-digit local format the WhatsApp field expects
+    const digits = String(c.phone || '').replace(/\D/g, '');
+    setCustomerPhone(digits.length >= 10 ? digits.slice(-10) : digits);
+    setSelectedCustomer(c);
+    setIsCustomerListOpen(false);
+    setCustomerSearch('');
+  };
+
+  const clearSelectedCustomer = () => {
+    setSelectedCustomer(null);
+    setCustomerName('');
+    setCustomerPhone('');
+  };
 
   // Cart line items (raw; display rates are derived from pricingTier below)
   const [rawCart, setCart] = useState([]);
@@ -186,6 +267,7 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
     setCart([]);
     setCustomerName('');
     setCustomerPhone('');
+    setSelectedCustomer(null);
     setPricingTier('retail');
   };
 
@@ -379,6 +461,88 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
                   </div>
                 </div>
 
+                {/* Saved-customer picker: one tap instead of typing */}
+                <div className="relative" ref={customerListRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomerListOpen(o => !o)}
+                    aria-haspopup="listbox"
+                    aria-expanded={isCustomerListOpen}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 text-xs font-medium hover:border-indigo-300 transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <Users className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                      {selectedCustomer ? (
+                        <span className="truncate">
+                          <span className="font-bold text-slate-800">{selectedCustomer.name}</span>
+                          {selectedCustomer.phone && <span className="text-slate-400"> · {selectedCustomer.phone}</span>}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">Select saved customer (Parties / Registry)</span>
+                      )}
+                    </span>
+                    {selectedCustomer ? (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => { e.stopPropagation(); clearSelectedCustomer(); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); clearSelectedCustomer(); } }}
+                        className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 shrink-0 cursor-pointer"
+                        aria-label="Clear selected customer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </span>
+                    ) : (
+                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isCustomerListOpen ? 'rotate-180' : ''}`} />
+                    )}
+                  </button>
+
+                  {isCustomerListOpen && (
+                    <div className="absolute left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-30">
+                      <div className="px-2 pb-1">
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder="Search customers..."
+                          value={customerSearch}
+                          onChange={(e) => setCustomerSearch(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                      </div>
+                      <div className="max-h-44 overflow-y-auto">
+                        {filteredCustomers.length === 0 ? (
+                          <p className="px-3 py-3 text-[11px] text-slate-400 text-center">
+                            No saved customers found — add one in Parties or the Vendor Registry.
+                          </p>
+                        ) : (
+                          filteredCustomers.map(c => (
+                            <button
+                              key={c.key}
+                              type="button"
+                              onClick={() => selectSavedCustomer(c)}
+                              className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-indigo-50 transition-colors cursor-pointer ${
+                                selectedCustomer?.key === c.key ? 'bg-indigo-50/60' : ''
+                              }`}
+                            >
+                              <span className="flex items-center gap-2 min-w-0">
+                                <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <span className="min-w-0">
+                                  <span className="block text-xs font-semibold text-slate-800 truncate">{c.name}</span>
+                                  {c.phone && <span className="block text-[10px] text-slate-400">{c.phone}</span>}
+                                </span>
+                              </span>
+                              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">
+                                {c.source}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Manual entry (pre-filled when a saved customer is picked) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <input
                     type="text"

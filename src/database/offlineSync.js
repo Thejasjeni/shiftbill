@@ -363,6 +363,21 @@ export async function getLocalInventory() {
 // its pending list. All callers await the same in-flight promise instead.
 let syncInFlight = null;
 
+// Temp ids whose remote insert is currently in flight (addSale/addPurchase/
+// addExpense register before awaiting the insert). The realtime channel can
+// trigger a sync the instant the server row lands — before the caller has
+// swapped the local row for it — so the push step must skip these to avoid
+// inserting the same bill twice.
+const insertingRemoteIds = new Set();
+
+export function beginRemoteInsert(tempId) {
+  if (tempId) insertingRemoteIds.add(tempId);
+}
+
+export function endRemoteInsert(tempId) {
+  if (tempId) insertingRemoteIds.delete(tempId);
+}
+
 export async function syncWithSupabase() {
   if (!navigator.onLine || !isSupabaseConfigured || !supabase) {
     return { success: false, reason: 'offline_or_unconfigured' };
@@ -378,6 +393,9 @@ export async function syncWithSupabase() {
     // 1. Push pending local transactions to Supabase
     const pending = await getPendingSyncTransactions();
     for (const tx of pending) {
+      // Skip rows whose remote insert is mid-flight in addSale/addPurchase/
+      // addExpense — pushing here would create a duplicate
+      if (insertingRemoteIds.has(tx.id)) continue;
       const payload = {
         amount: Number(tx.amount) || 0,
         type: tx.type,
