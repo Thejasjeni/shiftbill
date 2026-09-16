@@ -61,6 +61,49 @@ export async function getPendingSyncTransactions() {
   return all.filter(t => !t.synced);
 }
 
+// Delete a transaction from the local cache (IndexedDB)
+export async function deleteLocalTransaction(id) {
+  const db = await openLocalDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['transactions'], 'readwrite');
+    transaction.objectStore('transactions').delete(id);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+}
+
+// ---- Deletion tombstones ----
+// A deleted transaction must not be resurrected by the next sync pull while its
+// remote delete is still pending (e.g. deleted while offline). Ids live in
+// localStorage and are retried/cleared once the remote delete succeeds.
+const TOMBSTONE_KEY = 'swiftbill_deleted_tx_ids';
+
+export function getDeletedTxIds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(TOMBSTONE_KEY) || '[]'));
+  } catch {
+    return new Set();
+  }
+}
+
+export function rememberDeletedTx(id) {
+  try {
+    const ids = JSON.parse(localStorage.getItem(TOMBSTONE_KEY) || '[]');
+    if (!ids.includes(id)) {
+      ids.push(id);
+      // Cap the list so it can never grow unbounded
+      localStorage.setItem(TOMBSTONE_KEY, JSON.stringify(ids.slice(-500)));
+    }
+  } catch { /* ignore */ }
+}
+
+export function forgetDeletedTx(id) {
+  try {
+    const ids = JSON.parse(localStorage.getItem(TOMBSTONE_KEY) || '[]').filter(x => x !== id);
+    localStorage.setItem(TOMBSTONE_KEY, JSON.stringify(ids));
+  } catch { /* ignore */ }
+}
+
 // Mark transaction as synced, optionally merging the server-generated row in
 // place of the temporary local one (keeps IDs unique, avoids duplicates).
 export async function markTransactionSynced(id, remoteRow = null) {
@@ -161,8 +204,11 @@ export async function syncWithSupabase() {
     if (!txErr && Array.isArray(remoteTxs)) {
       const localTxs = await getLocalTransactions();
       const localById = new Map(localTxs.map(t => [t.id, t]));
+      const deletedIds = getDeletedTxIds();
 
       for (const rTx of remoteTxs) {
+        // Skip rows the user deleted locally whose remote delete hasn't landed yet
+        if (deletedIds.has(rTx.id)) continue;
         const local = localById.get(rTx.id);
         // Never clobber a pending local edit with the server copy
         if (local && !local.synced) continue;
@@ -182,6 +228,12 @@ export async function syncWithSupabase() {
 
     if (!invErr && remoteInv) {
       await saveLocalInventory(remoteInv);
+    }
+
+    // 4. Retry remote deletes that previously failed while offline
+    for (const id of getDeletedTxIds()) {
+      const { error } = await supabase.from('transactions').delete().eq('id', id);
+      if (!error) forgetDeletedTx(id);
     }
 
     return { success: true, pushed, pulled };

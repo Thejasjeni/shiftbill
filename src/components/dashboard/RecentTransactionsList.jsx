@@ -1,9 +1,9 @@
 import React from 'react';
-import { ArrowUpRight, ArrowDownLeft, Clock, FileText, ChevronRight } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Clock, FileText, ChevronRight, Trash2 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 
 export default function RecentTransactionsList() {
-  const { currentData, setActiveReportModal } = useDashboard();
+  const { currentData, setActiveReportModal, deleteTransaction } = useDashboard();
 
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('en-IN', {
@@ -14,6 +14,13 @@ export default function RecentTransactionsList() {
   };
 
   const transactions = currentData.transactions.slice(0, 5);
+
+  const handleDelete = async (e, tx) => {
+    e.stopPropagation(); // don't trigger the row's report-modal open
+    const label = tx.type === 'sale' ? 'receivable' : 'payable';
+    if (!window.confirm(`Delete this ${label} of ${formatCurrency(tx.amount)} for ${tx.party_name || tx.partyName || (tx.type === 'sale' ? 'Cash Customer' : 'Supplier')}? This cannot be undone.`)) return;
+    await deleteTransaction(tx.id);
+  };
 
   return (
     <section className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs transition-all">
@@ -101,18 +108,28 @@ export default function RecentTransactionsList() {
                   </div>
                 </div>
 
-                {/* Right: Amount */}
-                <div className="text-right shrink-0">
-                  <div
-                    className={`text-xs sm:text-sm font-extrabold tracking-tight ${
-                      isSale ? 'text-emerald-600' : 'text-purple-700'
-                    }`}
+                {/* Right: Amount + Delete */}
+                <div className="text-right shrink-0 flex items-center gap-1.5">
+                  <div>
+                    <div
+                      className={`text-xs sm:text-sm font-extrabold tracking-tight ${
+                        isSale ? 'text-emerald-600' : 'text-purple-700'
+                      }`}
+                    >
+                      {isSale ? '+' : '-'}{formatCurrency(tx.amount)}
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-medium capitalize">
+                      {tx.type}
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => handleDelete(e, tx)}
+                    title="Delete entry"
+                    aria-label={`Delete transaction ${String(tx.id).slice(0, 8)}`}
+                    className="p-1.5 rounded-lg text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0"
                   >
-                    {isSale ? '+' : '-'}{formatCurrency(tx.amount)}
-                  </div>
-                  <div className="text-[10px] text-slate-400 font-medium capitalize">
-                    {tx.type}
-                  </div>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             );

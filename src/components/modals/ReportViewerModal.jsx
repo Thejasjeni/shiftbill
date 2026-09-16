@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { X, Download, Printer, Search, FileText, ArrowDownLeft, ArrowUpRight, CheckCircle2, Clock } from 'lucide-react';
+import { X, Download, Printer, Search, FileText, ArrowDownLeft, ArrowUpRight, CheckCircle2, Clock, Trash2 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 
 export default function ReportViewerModal() {
-  const { activeReportModal, setActiveReportModal, currentData } = useDashboard();
+  const { activeReportModal, setActiveReportModal, currentData, deleteTransaction } = useDashboard();
   const [searchTerm, setSearchTerm] = useState('');
+  const [deletingId, setDeletingId] = useState(null);
 
   if (!activeReportModal) return null;
 
@@ -19,6 +20,19 @@ export default function ReportViewerModal() {
   const partyOf = (tx) => tx.party_name || tx.partyName || (tx.type === 'sale' ? 'Cash Customer' : 'Supplier');
   const dateOf = (tx) => (tx.created_at ? new Date(tx.created_at) : null);
   const paymentOf = (tx) => tx.payment_mode || tx.paymentMethod || 'Cash';
+
+  // Delete a transaction row (sale = receivable, purchase = payable)
+  const handleDelete = async (tx) => {
+    const label = tx.type === 'sale' ? 'receivable entry' : 'payable entry';
+    if (!window.confirm(`Delete this ${label} of ${formatCurrency(tx.amount)} for ${partyOf(tx)}? This cannot be undone.`)) return;
+
+    setDeletingId(tx.id);
+    const res = await deleteTransaction(tx.id);
+    setDeletingId(null);
+    if (!res?.success) {
+      window.alert(res?.error || 'Could not delete this entry. Please try again.');
+    }
+  };
 
   const filteredTransactions = currentData.transactions.filter(t => {
     const q = searchTerm.toLowerCase();
@@ -174,16 +188,27 @@ export default function ReportViewerModal() {
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <div className={`font-bold text-xs sm:text-sm ${isSale ? 'text-emerald-600' : 'text-slate-800'}`}>
-                        {isSale ? '+' : '-'}{formatCurrency(tx.amount)}
+                    <div className="text-right flex items-center gap-2">
+                      <div>
+                        <div className={`font-bold text-xs sm:text-sm ${isSale ? 'text-emerald-600' : 'text-slate-800'}`}>
+                          {isSale ? '+' : '-'}{formatCurrency(tx.amount)}
+                        </div>
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.2 rounded ${
+                          tx.synced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {tx.synced ? <CheckCircle2 className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
+                          {tx.synced ? 'Synced' : 'Pending sync'}
+                        </span>
                       </div>
-                      <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.2 rounded ${
-                        tx.synced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {tx.synced ? <CheckCircle2 className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
-                        {tx.synced ? 'Synced' : 'Pending sync'}
-                      </span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(tx); }}
+                        disabled={deletingId === tx.id}
+                        title="Delete entry"
+                        aria-label={`Delete transaction ${String(tx.id).slice(0, 8)}`}
+                        className="p-1.5 rounded-lg text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-wait shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 );

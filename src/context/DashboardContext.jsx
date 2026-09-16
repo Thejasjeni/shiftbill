@@ -6,7 +6,10 @@ import {
   getPendingSyncTransactions,
   saveLocalInventory,
   getLocalInventory,
-  syncWithSupabase
+  syncWithSupabase,
+  deleteLocalTransaction,
+  markTransactionSynced,
+  rememberDeletedTx
 } from '../database/offlineSync';
 
 const DashboardContext = createContext();
@@ -269,10 +272,12 @@ export function DashboardProvider({ children }) {
     setTransactions(prev => [newRecord, ...prev]);
     await refreshPendingCount();
 
-    // If online, sync immediately
+    // If online, insert remotely and swap the temp local row for the server
+    // row BEFORE the next sync — otherwise the still-unsynced local copy gets
+    // pushed again and the transaction is duplicated.
     if (navigator.onLine && isSupabaseConfigured) {
       try {
-        const { error } = await supabase
+        const { data: inserted, error } = await supabase
           .from('transactions')
           .insert([{
             amount,
@@ -281,9 +286,13 @@ export function DashboardProvider({ children }) {
             pricing_tier: newRecord.pricing_tier,
             payment_mode: newRecord.payment_mode,
             items_json: newRecord.items_json
-          }]);
+          }])
+          .select()
+          .single();
 
-        if (!error) {
+        if (!error && inserted) {
+          await markTransactionSynced(newRecord.id, inserted);
+          setTransactions(prev => prev.map(t => (t.id === newRecord.id ? { ...inserted, synced: true } : t)));
           await syncWithSupabase();
           setLastSynced(new Date().toLocaleTimeString());
         }
@@ -315,10 +324,11 @@ export function DashboardProvider({ children }) {
     setTransactions(prev => [newRecord, ...prev]);
     await refreshPendingCount();
 
-    // If online, sync
+    // If online, insert remotely and swap the temp local row for the server
+    // row BEFORE the next sync (same duplication guard as addSale)
     if (navigator.onLine && isSupabaseConfigured) {
       try {
-        const { error } = await supabase
+        const { data: inserted, error } = await supabase
           .from('transactions')
           .insert([{
             amount,
@@ -327,9 +337,13 @@ export function DashboardProvider({ children }) {
             pricing_tier: 'wholesale',
             payment_mode: 'Bank Transfer',
             items_json: []
-          }]);
+          }])
+          .select()
+          .single();
 
-        if (!error) {
+        if (!error && inserted) {
+          await markTransactionSynced(newRecord.id, inserted);
+          setTransactions(prev => prev.map(t => (t.id === newRecord.id ? { ...inserted, synced: true } : t)));
           await syncWithSupabase();
           setLastSynced(new Date().toLocaleTimeString());
         }
@@ -337,6 +351,44 @@ export function DashboardProvider({ children }) {
         console.warn('Network sync postponed:', e);
       }
     }
+  };
+
+  // 5. Delete a transaction (sale or purchase): removes it from the local cache
+  // immediately and, when online, from Supabase. If offline (or the remote
+  // delete fails), the id is tombstoned so the next sync neither resurrects it
+  // from the server nor treats it as pending data.
+  const deleteTransaction = async (id) => {
+    if (!id) return { success: false, error: 'Missing transaction id' };
+
+    // 1. Remove locally first (zero-latency UI update)
+    try {
+      await deleteLocalTransaction(id);
+    } catch (e) {
+      console.warn('Local delete failed:', e);
+    }
+    setTransactions(prev => prev.filter(t => t.id !== id));
+
+    // 2. Remote delete (skipped entirely for temp local-only rows)
+    if (isSupabaseConfigured && supabase && navigator.onLine && !String(id).startsWith('local-')) {
+      try {
+        const { error } = await supabase.from('transactions').delete().eq('id', id);
+        if (!error) {
+          await syncWithSupabase();
+          setLastSynced(new Date().toLocaleTimeString());
+          return { success: true, deleted: 'remote' };
+        }
+        console.warn('Remote delete failed, tombstoning:', error.message);
+      } catch (e) {
+        console.warn('Remote delete postponed:', e);
+      }
+    }
+
+    // 3. Offline / failed / local-only: tombstone only real (remote-backed) ids
+    if (!String(id).startsWith('local-')) {
+      rememberDeletedTx(id);
+    }
+    await refreshPendingCount();
+    return { success: true, deleted: 'local' };
   };
 
   const addParty = (party) => {
@@ -385,6 +437,7 @@ export function DashboardProvider({ children }) {
     currentData,
     addSale,
     addPurchase,
+    deleteTransaction,
     addParty,
     addItem,
     // Offline-First & Supabase states
