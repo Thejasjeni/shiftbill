@@ -31,10 +31,12 @@ export function useVendors() {
   }, [load]);
 
   // Submit handler for the persistent form. Returns true on success.
-  const addVendor = useCallback(async ({ name, gstNo, phone, type }) => {
+  // Pass the vendor object through untouched — insertVendor normalizes
+  // both gst_no (snake) and gstNo (camel) spellings.
+  const addVendor = useCallback(async (vendor) => {
     setIsSaving(true);
     try {
-      const row = await insertVendor({ name, gstNo, phone, type });
+      const row = await insertVendor(vendor);
       setVendors(prev => [row, ...prev]);
       return true;
     } finally {

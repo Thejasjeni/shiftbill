@@ -51,12 +51,16 @@ export async function fetchVendors() {
 }
 
 // Insert one vendor. Normalizes optional fields before sending.
-export async function insertVendor({ name, gstNo, phone, type = 'customer' }) {
+// Accepts both gstNo (camel) and gst_no (snake) so callers can't silently
+// drop the GST number through a naming mismatch.
+export async function insertVendor(vendor) {
   assertSupabaseConfigured();
+  const { name, phone, type = 'customer' } = vendor;
+  const gstRaw = vendor.gstNo ?? vendor.gst_no;
 
   const payload = {
     name: name.trim(),
-    gst_no: gstNo?.trim() || null,
+    gst_no: gstRaw?.trim() || null,
     phone: phone?.trim() || null,
     type
   };
