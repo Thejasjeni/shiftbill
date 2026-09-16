@@ -4,6 +4,7 @@ import { useDashboard } from '../../context/DashboardContext';
 import { useProducts } from '../../hooks/useProducts';
 import SearchableProductSelect from '../ui/SearchableProductSelect';
 import { supabase } from '../../lib/supabaseClient';
+import { queueStockDelta } from '../../database/offlineSync';
 
 export default function NewPurchaseModal() {
   const { isAddPurchaseOpen, setIsAddPurchaseOpen, addPurchase, isSupabaseConfigured } = useDashboard();
@@ -42,14 +43,24 @@ export default function NewPurchaseModal() {
         type: 'purchase'
       });
 
-      // Stock-in: atomically bump inventory server-side via RPC
+      // Stock-in: atomically bump inventory server-side via RPC when online;
+      // queue the delta for replay on the next sync when offline
       // (client-computed totals would race with concurrent edits)
       if (product && isSupabaseConfigured && supabase) {
-        const { error: stockErr } = await supabase.rpc('increment_inventory_stock', {
-          p_id: product.id,
-          p_delta: qtyNum
-        });
-        if (stockErr) console.warn('Stock update failed:', stockErr.message);
+        if (navigator.onLine) {
+          const { error: stockErr } = await supabase.rpc('increment_inventory_stock', {
+            p_id: product.id,
+            p_delta: qtyNum
+          });
+          if (stockErr) {
+            queueStockDelta(product.id, qtyNum); // retry on next sync
+            console.warn('Stock update failed, queued for retry:', stockErr.message);
+          }
+        } else {
+          // Offline: the purchase tx is already saved locally — queue the
+          // stock bump so it replays when connectivity returns
+          queueStockDelta(product.id, qtyNum);
+        }
       }
 
       setSupplierName('');

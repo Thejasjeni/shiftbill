@@ -104,6 +104,103 @@ export function forgetDeletedTx(id) {
   } catch { /* ignore */ }
 }
 
+// ---- Pending stock deltas ----
+// Inventory stock-in goes through a Supabase RPC, which is impossible while
+// offline. Queue the delta locally and replay it on the next successful sync
+// so purchases recorded offline still bump their product's stock.
+const STOCK_DELTA_KEY = 'swiftbill_pending_stock_deltas';
+
+export function getPendingStockDeltas() {
+  try {
+    return JSON.parse(localStorage.getItem(STOCK_DELTA_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+export function queueStockDelta(productId, delta) {
+  if (!productId || !(Number(delta) > 0)) return;
+  try {
+    const queue = getPendingStockDeltas();
+    queue.push({ productId: String(productId), delta: Number(delta), queuedAt: new Date().toISOString() });
+    // Cap the queue so it can never grow unbounded
+    localStorage.setItem(STOCK_DELTA_KEY, JSON.stringify(queue.slice(-500)));
+  } catch { /* ignore */ }
+}
+
+// Replay every queued stock delta against the server RPC. Successfully
+// applied deltas are removed; failures stay queued for the next sync.
+export async function flushStockDeltas() {
+  const queue = getPendingStockDeltas();
+  if (queue.length === 0) return 0;
+  let applied = 0;
+  const remaining = [];
+  for (const item of queue) {
+    try {
+      const { error } = await supabase.rpc('increment_inventory_stock', {
+        p_id: item.productId,
+        p_delta: item.delta
+      });
+      if (error) {
+        remaining.push(item);
+      } else {
+        applied++;
+      }
+    } catch {
+      remaining.push(item);
+    }
+  }
+  try {
+    localStorage.setItem(STOCK_DELTA_KEY, JSON.stringify(remaining));
+  } catch { /* ignore */ }
+  return applied;
+}
+
+// ---- Pending vendors ----
+// Vendor registry entries saved while offline queue here and upload to the
+// `vendors` table on the next successful sync.
+const VENDOR_QUEUE_KEY = 'swiftbill_pending_vendors';
+
+export function getPendingVendors() {
+  try {
+    return JSON.parse(localStorage.getItem(VENDOR_QUEUE_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+export function queueVendor(vendor) {
+  try {
+    const queue = getPendingVendors();
+    queue.push({ ...vendor, queuedAt: new Date().toISOString() });
+    // Cap the queue so it can never grow unbounded
+    localStorage.setItem(VENDOR_QUEUE_KEY, JSON.stringify(queue.slice(-200)));
+  } catch { /* ignore */ }
+}
+
+// Upload every queued vendor; failures stay queued for the next sync.
+export async function flushPendingVendors() {
+  const queue = getPendingVendors();
+  if (queue.length === 0) return 0;
+  let synced = 0;
+  const remaining = [];
+  for (const v of queue) {
+    try {
+      const { error } = await supabase
+        .from('vendors')
+        .insert({ name: v.name, gst_no: v.gst_no || null, phone: v.phone || null, type: v.type || 'customer' });
+      if (error) remaining.push(v);
+      else synced++;
+    } catch {
+      remaining.push(v);
+    }
+  }
+  try {
+    localStorage.setItem(VENDOR_QUEUE_KEY, JSON.stringify(remaining));
+  } catch { /* ignore */ }
+  return synced;
+}
+
 // Mark transaction as synced, optionally merging the server-generated row in
 // place of the temporary local one (keeps IDs unique, avoids duplicates).
 export async function markTransactionSynced(id, remoteRow = null) {
@@ -160,11 +257,19 @@ export async function getLocalInventory() {
 }
 
 // Offline-First Sync Service
+// Serialize syncs: concurrent runs (e.g. mount + realtime event firing
+// together) would double-push rows still pending when the second run reads
+// its pending list. All callers await the same in-flight promise instead.
+let syncInFlight = null;
+
 export async function syncWithSupabase() {
   if (!navigator.onLine || !isSupabaseConfigured || !supabase) {
     return { success: false, reason: 'offline_or_unconfigured' };
   }
 
+  if (syncInFlight) return syncInFlight;
+
+  syncInFlight = (async () => {
   let pushed = 0;
   let pulled = 0;
 
@@ -236,9 +341,20 @@ export async function syncWithSupabase() {
       if (!error) forgetDeletedTx(id);
     }
 
+    // 5. Replay stock deltas queued while offline (purchase stock-in)
+    await flushStockDeltas();
+
+    // 6. Upload vendors saved while offline
+    await flushPendingVendors();
+
     return { success: true, pushed, pulled };
   } catch (err) {
     console.error('Offline sync error:', err);
     return { success: false, error: err.message };
+  } finally {
+    syncInFlight = null;
   }
+  })();
+
+  return syncInFlight;
 }

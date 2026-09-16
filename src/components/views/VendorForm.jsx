@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Building2, Phone, Loader2, Save, RefreshCw, AlertTriangle, CheckCircle2, UserCog } from 'lucide-react';
 import { useVendors } from '../../hooks/useVendors';
 import { isSupabaseConfigured } from '../../lib/supabaseClient';
+import { queueVendor } from '../../database/offlineSync';
 
 // ---------------------------------------------------------------------------
 // VendorForm — persistent vendor/client form (Name, GST No, Phone).
@@ -45,13 +46,28 @@ export default function VendorForm() {
     setFieldErrors(errs);
     if (Object.keys(errs).length > 0) return;
 
+    const vendor = { name: name.trim(), gst_no: gstNo.trim(), phone: phone.trim(), type };
+
+    // Offline: queue for upload when connectivity returns instead of failing
+    if (!navigator.onLine || !isSupabaseConfigured) {
+      queueVendor(vendor);
+      setSuccessMsg(`${vendor.name} saved on this device — will upload automatically when back online`);
+      setName(''); setGstNo(''); setPhone('');
+      setTimeout(() => setSuccessMsg(null), 5000);
+      return;
+    }
+
     try {
-      await addVendor({ name, gstNo, phone, type });
-      setSuccessMsg(`${name.trim()} saved to Supabase`);
+      await addVendor(vendor);
+      setSuccessMsg(`${vendor.name} saved to Supabase`);
       setName(''); setGstNo(''); setPhone('');
       setTimeout(() => setSuccessMsg(null), 4000);
-    } catch (err) {
-      setFieldErrors({ form: err.message || 'Failed to save vendor' });
+    } catch {
+      // Server rejected but we're online: queue it so nothing is lost
+      queueVendor(vendor);
+      setSuccessMsg(`${vendor.name} saved on this device — will upload automatically when back online`);
+      setName(''); setGstNo(''); setPhone('');
+      setTimeout(() => setSuccessMsg(null), 5000);
     }
   };
 

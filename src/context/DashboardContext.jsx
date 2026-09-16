@@ -9,7 +9,9 @@ import {
   syncWithSupabase,
   deleteLocalTransaction,
   markTransactionSynced,
-  rememberDeletedTx
+  rememberDeletedTx,
+  getPendingStockDeltas,
+  getPendingVendors
 } from '../database/offlineSync';
 
 const DashboardContext = createContext();
@@ -84,11 +86,14 @@ export function DashboardProvider({ children }) {
   // Stable ref so the realtime listener can re-fetch without re-subscribing
   const fetchAllDataRef = useRef(null);
 
-  // Check pending unsynced count
+  // Check pending unsynced count: queued transactions + offline stock deltas
+  // + offline vendor entries — everything waiting to upload to Supabase
   const refreshPendingCount = async () => {
     try {
       const pending = await getPendingSyncTransactions();
-      setPendingSyncCount(pending.length);
+      const stockDeltas = getPendingStockDeltas().length;
+      const vendors = getPendingVendors().length;
+      setPendingSyncCount(pending.length + stockDeltas + vendors);
     } catch (e) {
       // ignore
     }
