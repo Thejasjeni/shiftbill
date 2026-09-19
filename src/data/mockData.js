@@ -1,26 +1,4 @@
-// Baseline empty schema and navigation structure for SwiftBill
-
-export const INITIAL_EMPTY_STATE = {
-  totalReceivable: 0,
-  totalPayable: 0,
-  totalSale: 0,
-  cashInHand: 0,
-  bankBalance: 0,
-  stockValue: 0,
-  salesTimeline: [
-    { date: "1 Sep", amount: 0, label: "01 Sep" },
-    { date: "4 Sep", amount: 0, label: "04 Sep" },
-    { date: "8 Sep", amount: 0, label: "08 Sep" },
-    { date: "12 Sep", amount: 0, label: "12 Sep" },
-    { date: "16 Sep", amount: 0, label: "16 Sep" },
-    { date: "20 Sep", amount: 0, label: "20 Sep" },
-    { date: "24 Sep", amount: 0, label: "24 Sep" },
-    { date: "28 Sep", amount: 0, label: "28 Sep" },
-  ],
-  transactions: [],
-  parties: [],
-  items: []
-};
+// Navigation structure for SwiftBill
 
 export const NAVIGATION_ITEMS = [
   { id: "home", label: "Home", icon: "LayoutDashboard" },

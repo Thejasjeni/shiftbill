@@ -188,9 +188,7 @@ export function DashboardProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2. Dynamic Financial Calculations:
-  // - Total Receivable: sum of all transactions where type === 'sale'
-  // - Total Payable: sum of all transactions where type === 'purchase'
+  // All-time totals for the summary cards; the chart owns the range-scoped ones
   const totalReceivable = useMemo(() => {
     return transactions
       .filter(t => t.type === 'sale')
@@ -202,20 +200,6 @@ export function DashboardProvider({ children }) {
       .filter(t => t.type === 'purchase')
       .reduce((sum, t) => sum + Number(t.amount || 0), 0);
   }, [transactions]);
-
-  // Expenses (e.g. petrol) reduce profit but are NOT supplier payables
-  const totalExpense = useMemo(() => {
-    return transactions
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-  }, [transactions]);
-
-  // Profit = sales − expenses (purchases are stock-in, not profit-reducing)
-  const totalProfit = useMemo(() => {
-    return totalReceivable - totalExpense;
-  }, [totalReceivable, totalExpense]);
-
-  const totalSale = totalReceivable;
 
   // Chart timeline + range totals for the selected range
   const salesTimeline = useMemo(
@@ -230,19 +214,16 @@ export function DashboardProvider({ children }) {
     return {
       totalReceivable,
       totalPayable,
-      totalSale,
       cashInHand: totalReceivable,
       bankBalance: 0,
       stockValue: items.reduce((sum, itm) => sum + (Number(itm.retail_price || itm.price || 0) * Number(itm.stock_quantity || itm.stock || 0)), 0),
       salesTimeline,
       salesRangeTotals,
-      totalExpense,
-      totalProfit,
       transactions,
       parties,
       items
     };
-  }, [totalReceivable, totalPayable, totalSale, totalExpense, totalProfit, transactions, parties, items, salesTimeline, salesRangeTotals]);
+  }, [totalReceivable, totalPayable, transactions, parties, items, salesTimeline, salesRangeTotals]);
 
   // 3. Add Sale: Saves locally first, then syncs to Supabase
   const addSale = async (saleData) => {

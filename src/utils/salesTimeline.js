@@ -60,7 +60,8 @@ const RANGE_SPECS = {
 export const RANGE_LABELS = Object.keys(RANGE_SPECS);
 export const DEFAULT_RANGE = 'This Month';
 
-// Sales, expenses and profit per bucket for one range.
+// Sales, expenses and profit per bucket for one range. Purchases are stock-in, so
+// they are neither revenue nor a cost of sales.
 export function buildSalesTimeline(transactions, range, now = new Date()) {
   const spec = RANGE_SPECS[range];
   if (!spec) throw new Error(`Unknown chart range: ${range}`);
