@@ -32,6 +32,103 @@ const DEFAULT_BUSINESS_INFO = {
   currency: "₹"
 };
 
+// Bucket counts are fixed per range, so a range is always drawable and its
+// bucket boundaries stay stable across renders (at least 6 buckets everywhere).
+const DATE_LABEL = { day: 'numeric', month: 'short' };
+const RANGE_SPECS = {
+  Today: { bucketCount: 6, labelFormat: { hour: 'numeric' } },
+  'This Week': { bucketCount: 7, labelFormat: DATE_LABEL },
+  'This Month': { bucketCount: 10, labelFormat: DATE_LABEL },
+  'Last Month': { bucketCount: 6, labelFormat: DATE_LABEL },
+  'This Quarter': { bucketCount: 10, labelFormat: DATE_LABEL }
+};
+
+const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+// The window a range covers: either a closed calendar window (Last Month, whose
+// strict end keeps this month's rows out) or an open one that runs up to `now`.
+export function rangeWindow(range, now = new Date()) {
+  const daysAgo = (days) => startOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days));
+
+  switch (range) {
+    case 'Today':
+      return { start: startOfDay(now), end: null };
+    case 'This Week':
+      return { start: daysAgo(6), end: null };
+    case 'Last Month':
+      return {
+        start: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+        end: new Date(now.getFullYear(), now.getMonth(), 1)
+      };
+    case 'This Quarter':
+      return { start: daysAgo(89), end: null };
+    case 'This Month':
+    default:
+      return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: null };
+  }
+}
+
+// Chart timeline for one range: sales, expenses and profit per bucket.
+// A timestamp stamped slightly ahead of this device's clock (server clock skew)
+// still belongs to the newest bucket rather than silently vanishing.
+export function buildSalesTimeline(transactions, range, now = new Date()) {
+  const spec = RANGE_SPECS[range] || RANGE_SPECS['This Month'];
+  const { start, end } = rangeWindow(range, now);
+  const windowStart = start.getTime();
+  const windowEnd = end ? end.getTime() : now.getTime();
+  const span = Math.max(windowEnd - windowStart, 1);
+
+  const buckets = Array.from({ length: spec.bucketCount }, (_, i) => ({
+    start: windowStart + (span * i) / spec.bucketCount,
+    amount: 0,
+    expense: 0,
+    count: 0
+  }));
+
+  transactions.forEach((tx) => {
+    if (tx.type !== 'sale' && tx.type !== 'expense') return;
+    const time = new Date(tx.created_at || tx.date).getTime();
+    if (isNaN(time) || time < windowStart) return;
+    if (end && time >= windowEnd) return;
+    // Bucket starts are fractional ms, so every timestamp (integer ms, as Date
+    // stores them) falls in exactly one bucket; the clamp keeps a skewed
+    // timestamp a little ahead of `now` in the newest bucket.
+    const rawIndex = Math.floor(((time - windowStart) / span) * spec.bucketCount);
+    const index = Math.min(spec.bucketCount - 1, Math.max(0, rawIndex));
+    const amount = Number(tx.amount) || 0;
+    if (tx.type === 'sale') {
+      buckets[index].amount += amount;
+      buckets[index].count += 1;
+    } else {
+      buckets[index].expense += amount;
+    }
+  });
+
+  return buckets.map((bucket, i) => {
+    const bucketStart = new Date(bucket.start);
+    return {
+      key: `${i}-${Math.round(bucket.start)}`,
+      date: bucketStart.toLocaleString('en-IN', spec.labelFormat),
+      fullDate: bucketStart.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      amount: bucket.amount,
+      expense: bucket.expense,
+      profit: bucket.amount - bucket.expense,
+      count: bucket.count
+    };
+  });
+}
+
+// Totals for the exact window the chart draws, so the header, the summary strip
+// and the plotted series can never disagree.
+export function summarizeTimeline(timeline) {
+  return timeline.reduce((totals, bucket) => ({
+    sales: totals.sales + bucket.amount,
+    expense: totals.expense + bucket.expense,
+    profit: totals.profit + bucket.profit,
+    invoices: totals.invoices + bucket.count
+  }), { sales: 0, expense: 0, profit: 0, invoices: 0 });
+}
+
 export function DashboardProvider({ children }) {
   // Time range filter for sales chart
   const [salesTimeRange, setSalesTimeRange] = useState('This Month');
@@ -216,52 +313,13 @@ export function DashboardProvider({ children }) {
 
   const totalSale = totalReceivable;
 
-  // Sales timeline derived from REAL transaction dates for the selected range
-  const salesTimeline = useMemo(() => {
-    const now = new Date();
-    let days = 28;
-    switch (salesTimeRange) {
-      case 'Today': days = 1; break;
-      case 'This Week': days = 7; break;
-      case 'This Month': days = 28; break;
-      case 'Last Month': days = 28; break;
-      case 'This Quarter': days = 90; break;
-      default: days = 28;
-    }
+  // Chart timeline + range totals for the selected range
+  const salesTimeline = useMemo(
+    () => buildSalesTimeline(transactions, salesTimeRange),
+    [transactions, salesTimeRange]
+  );
 
-    const rangeStart = new Date(now);
-    rangeStart.setDate(now.getDate() - (days - 1));
-    rangeStart.setHours(0, 0, 0, 0);
-
-    // One bucket per day (cap bucket count so long ranges stay readable)
-    const bucketCount = Math.min(days, 8);
-    const buckets = Array.from({ length: bucketCount }, (_, i) => {
-      const d = new Date(rangeStart);
-      d.setDate(rangeStart.getDate() + Math.floor(i * days / bucketCount));
-      return { date: d, amount: 0, expense: 0 };
-    });
-
-    const cutoff = days > 28 ? new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()) : rangeStart;
-    transactions.forEach(tx => {
-      if (tx.type !== 'sale' && tx.type !== 'expense') return;
-      const d = new Date(tx.created_at || tx.date);
-      if (isNaN(d.getTime()) || d < cutoff) return;
-      const amt = Number(tx.amount) || 0;
-      let target = buckets[0];
-      for (const b of buckets) { if (d >= b.date) target = b; else break; }
-      if (tx.type === 'sale') {
-        target.amount += amt;
-      } else {
-        target.expense += amt;
-      }
-    });
-
-    return buckets.map(b => ({
-      date: b.date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
-      amount: b.amount,
-      profit: b.amount - b.expense
-    }));
-  }, [transactions, salesTimeRange]);
+  const salesRangeTotals = useMemo(() => summarizeTimeline(salesTimeline), [salesTimeline]);
 
   // Computed state combining user entries and Supabase records
   const currentData = useMemo(() => {
@@ -273,13 +331,14 @@ export function DashboardProvider({ children }) {
       bankBalance: 0,
       stockValue: items.reduce((sum, itm) => sum + (Number(itm.retail_price || itm.price || 0) * Number(itm.stock_quantity || itm.stock || 0)), 0),
       salesTimeline,
+      salesRangeTotals,
       totalExpense,
       totalProfit,
       transactions,
       parties,
       items
     };
-  }, [totalReceivable, totalPayable, totalSale, totalExpense, totalProfit, transactions, parties, items, salesTimeline]);
+  }, [totalReceivable, totalPayable, totalSale, totalExpense, totalProfit, transactions, parties, items, salesTimeline, salesRangeTotals]);
 
   // 3. Add Sale: Saves locally first, then syncs to Supabase
   const addSale = async (saleData) => {

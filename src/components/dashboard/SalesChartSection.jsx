@@ -1,25 +1,73 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, ChevronDown, TrendingUp, Info, Wallet } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Calendar, ChevronDown, TrendingUp, Info } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
+
+const SERIES = [
+  { key: 'amount', label: 'Sales', color: '#4F46E5' },
+  { key: 'expense', label: 'Expense', color: '#F43F5E' },
+  { key: 'profit', label: 'Profit', color: '#059669' }
+];
+
+const FILTER_OPTIONS = ['Today', 'This Week', 'This Month', 'Last Month', 'This Quarter'];
+
+// Inner padding of the plot area (left keeps room for the axis labels)
+const PAD = { top: 16, right: 12, bottom: 4, left: 50 };
+const EMPTY_SIZE = { width: 560, height: 200 };
+// Stable fallbacks so downstream memo dependencies never change identity
+const EMPTY_BUCKETS = [];
+const EMPTY_TOTALS = { sales: 0, expense: 0, profit: 0, invoices: 0 };
+
+// Axis labels have to stay legible: ₹250 / ₹1.2k / ₹1.2L / ₹1.2Cr
+function compactINR(value) {
+  const amount = Number(value) || 0;
+  const abs = Math.abs(amount);
+  const sign = amount < 0 ? '-' : '';
+  const round = (n) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10);
+  if (abs >= 10000000) return `${sign}₹${round(abs / 10000000)}Cr`;
+  if (abs >= 100000) return `${sign}₹${round(abs / 100000)}L`;
+  if (abs >= 1000) return `${sign}₹${round(abs / 1000)}k`;
+  return `${sign}₹${Math.round(abs)}`;
+}
+
+// Snap a raw interval up to a human number (1 / 2 / 2.5 / 5 / 10 × 10ⁿ)
+function niceInterval(raw) {
+  if (!(raw > 0)) return 1;
+  const base = 10 ** Math.floor(Math.log10(raw));
+  const scaled = raw / base;
+  const factor = scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 2.5 ? 2.5 : scaled <= 5 ? 5 : 10;
+  return factor * base;
+}
+
+// Smooth cubic path through one series' points
+function smoothPath(points, key) {
+  return points.reduce((path, point, index) => {
+    if (index === 0) return `M ${point.x} ${point[key]}`;
+    const previous = points[index - 1];
+    const midX = previous.x + (point.x - previous.x) / 2;
+    return `${path} C ${midX} ${previous[key]}, ${midX} ${point[key]}, ${point.x} ${point[key]}`;
+  }, '');
+}
 
 export default function SalesChartSection() {
   const { currentData, salesTimeRange, setSalesTimeRange } = useDashboard();
-  const [activePoint, setActivePoint] = useState(null);
+  const [activeIndex, setActiveIndex] = useState(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [size, setSize] = useState(EMPTY_SIZE);
   const dropdownRef = useRef(null);
+  const plotRef = useRef(null);
 
-  const filterOptions = ['Today', 'This Week', 'This Month', 'Last Month', 'This Quarter'];
+  const buckets = currentData.salesTimeline || EMPTY_BUCKETS;
+  const totals = currentData.salesRangeTotals || EMPTY_TOTALS;
+  const hasData = buckets.some(bucket => bucket.amount > 0 || bucket.expense > 0);
 
-  // Close the dropdown on outside click / Escape
+  // Close the range dropdown on outside click / Escape
   useEffect(() => {
     if (!isDropdownOpen) return;
-    const handlePointer = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setIsDropdownOpen(false);
-      }
+    const handlePointer = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setIsDropdownOpen(false);
     };
-    const handleKey = (e) => {
-      if (e.key === 'Escape') setIsDropdownOpen(false);
+    const handleKey = (event) => {
+      if (event.key === 'Escape') setIsDropdownOpen(false);
     };
     document.addEventListener('mousedown', handlePointer);
     document.addEventListener('touchstart', handlePointer);
@@ -31,70 +79,153 @@ export default function SalesChartSection() {
     };
   }, [isDropdownOpen]);
 
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(val || 0);
+  // Draw in real pixels so nothing is stretched
+  useEffect(() => {
+    const element = plotRef.current;
+    if (!element) return;
+    const measure = () => {
+      const rect = element.getBoundingClientRect();
+      if (!rect.width) return;
+      setSize({
+        width: Math.round(rect.width),
+        height: Math.round(rect.height) || EMPTY_SIZE.height
+      });
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const formatCurrency = (value) => new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0
+  }).format(value || 0);
+
+  // Axis: an interval snapped to a human number, expanded until it covers the
+  // data, dipping below zero whenever a bucket's profit is negative.
+  const scale = useMemo(() => {
+    const values = buckets.flatMap(bucket => [bucket.amount, bucket.expense, bucket.profit]);
+    const dataMax = Math.max(0, ...values);
+    const dataMin = Math.min(0, ...values);
+
+    let tickCount = 4;
+    let interval = niceInterval((dataMax - dataMin) / tickCount) || 1;
+    let min = dataMin < 0 ? -Math.ceil(-dataMin / interval) * interval : 0;
+    let max = min + interval * tickCount;
+
+    let guard = 0;
+    while ((max < dataMax || min > dataMin) && guard < 8) {
+      tickCount += 1;
+      interval = niceInterval((dataMax - dataMin) / tickCount) || interval;
+      min = dataMin < 0 ? -Math.ceil(-dataMin / interval) * interval : 0;
+      max = min + interval * tickCount;
+      guard += 1;
+    }
+
+    return {
+      min,
+      max,
+      interval,
+      ticks: Array.from({ length: tickCount + 1 }, (_, i) => min + interval * i)
+    };
+  }, [buckets]);
+
+  const geometry = useMemo(() => {
+    const plotWidth = Math.max(10, size.width - PAD.left - PAD.right);
+    const plotHeight = Math.max(10, size.height - PAD.top - PAD.bottom);
+    // The context always produces at least 6 buckets, so a span of 1 is safe
+    const xFor = (index) => PAD.left + (index / (buckets.length - 1)) * plotWidth;
+    const yFor = (value) => PAD.top + ((scale.max - value) / (scale.max - scale.min)) * plotHeight;
+
+    return {
+      width: size.width,
+      height: size.height,
+      plotWidth,
+      plotHeight,
+      yFor,
+      baseline: yFor(0),
+      barWidth: Math.min(26, Math.max(4, (plotWidth / Math.max(buckets.length, 1)) * 0.45)),
+      points: buckets.map((bucket, index) => ({
+        ...bucket,
+        index,
+        x: xFor(index),
+        ySales: yFor(bucket.amount),
+        yExpense: yFor(bucket.expense),
+        yProfit: yFor(bucket.profit)
+      }))
+    };
+  }, [buckets, size, scale]);
+
+  // Only as many date labels as fit under the plot, aligned to real x positions
+  const labelPoints = useMemo(() => {
+    const maxLabels = Math.max(2, Math.floor(geometry.plotWidth / 62));
+    const stride = Math.max(1, Math.ceil(buckets.length / maxLabels));
+    const indices = [];
+    for (let i = 0; i < buckets.length; i += stride) indices.push(i);
+    const last = buckets.length - 1;
+    if (last > 0 && indices[indices.length - 1] !== last && last - indices[indices.length - 1] >= stride / 2) {
+      indices.push(last);
+    }
+    return indices.map(i => geometry.points[i]).filter(Boolean);
+  }, [geometry, buckets.length]);
+
+  const activePoint = activeIndex === null ? null : geometry.points[activeIndex];
+  const salesPath = smoothPath(geometry.points, 'ySales');
+  const profitPath = smoothPath(geometry.points, 'yProfit');
+  const salesArea = geometry.points.length
+    ? `${salesPath} L ${geometry.points[geometry.points.length - 1].x} ${geometry.baseline} L ${geometry.points[0].x} ${geometry.baseline} Z`
+    : '';
+
+  // One pointer handler over the whole plot: snap to the nearest bucket
+  const handlePointer = (event) => {
+    if (!buckets.length) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width) return;
+    const ratio = (event.clientX - rect.left) / rect.width;
+    const index = Math.round(ratio * (buckets.length - 1));
+    setActiveIndex(Math.min(buckets.length - 1, Math.max(0, index)));
   };
 
-  const timeline = currentData.salesTimeline;
-  const maxAmount = Math.max(...timeline.map(t => t.amount), 10000);
+  const handleKeyDown = (event) => {
+    if (!buckets.length) return;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+      event.preventDefault();
+      const step = event.key === 'ArrowRight' ? 1 : -1;
+      setActiveIndex((current) => {
+        const next = (current === null ? 0 : current + step);
+        return Math.min(buckets.length - 1, Math.max(0, next));
+      });
+    } else if (event.key === 'Escape') {
+      setActiveIndex(null);
+    }
+  };
 
-  // SVG Chart Geometry dimensions
-  const svgWidth = 600;
-  const svgHeight = 180;
-  const paddingX = 35;
-  const paddingY = 25;
-
-  const points = timeline.map((item, index) => {
-    const x = paddingX + (index / (timeline.length - 1)) * (svgWidth - paddingX * 2);
-    const normalizedY = item.amount / maxAmount;
-    const y = (svgHeight - paddingY) - normalizedY * (svgHeight - paddingY * 2);
-    // Profit uses the same scale so the two lines are directly comparable
-    const normalizedYProfit = item.profit / maxAmount;
-    const yProfit = (svgHeight - paddingY) - normalizedYProfit * (svgHeight - paddingY * 2);
-    return { ...item, x, y, yProfit };
-  });
-
-  // Create smooth SVG cubic bezier paths (sales + profit)
-  const buildSmoothPath = (key) => points.reduce((acc, point, index) => {
-    const yVal = point[key];
-    if (index === 0) return `M ${point.x} ${yVal}`;
-    const prev = points[index - 1];
-    const cp1x = prev.x + (point.x - prev.x) / 2;
-    const cp1y = prev[key];
-    const cp2x = prev.x + (point.x - prev.x) / 2;
-    const cp2y = yVal;
-    return `${acc} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${point.x} ${yVal}`;
-  }, '');
-
-  const linePath = buildSmoothPath('y');
-  const profitPath = buildSmoothPath('yProfit');
-
-  // Area path closing at the bottom
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${svgHeight - paddingY} L ${points[0].x} ${svgHeight - paddingY} Z`;
+  const tooltipX = activePoint
+    ? Math.min(Math.max(activePoint.x, 96), Math.max(96, geometry.width - 96))
+    : 0;
 
   return (
     <section className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs transition-all">
-      {/* Header Row: Title & Filter Dropdown */}
+      {/* Header: the range's own sales total, so it matches the plotted window */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
-              <span>Total Sale:</span>
-              <span className="text-indigo-600 font-extrabold text-base sm:text-lg">
-                {formatCurrency(currentData.totalSale)}
-              </span>
-            </h2>
-          </div>
+          <h2 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
+            <span>{salesTimeRange} Sales:</span>
+            <span className="text-indigo-600 font-extrabold text-base sm:text-lg">
+              {formatCurrency(totals.sales)}
+            </span>
+          </h2>
           <p className="text-[11px] text-slate-500 mt-0.5 text-left">
             Timeline: {salesTimeRange}
           </p>
         </div>
 
-        {/* Filter Dropdown */}
         <div className="relative self-start sm:self-auto" ref={dropdownRef}>
           <button
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -109,18 +240,19 @@ export default function SalesChartSection() {
 
           {isDropdownOpen && (
             <div className="absolute right-0 mt-1 w-36 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-20 text-xs">
-              {filterOptions.map((opt) => (
+              {FILTER_OPTIONS.map((option) => (
                 <button
-                  key={opt}
+                  key={option}
                   onClick={() => {
-                    setSalesTimeRange(opt);
+                    setSalesTimeRange(option);
                     setIsDropdownOpen(false);
+                    setActiveIndex(null);
                   }}
                   className={`w-full text-left px-3 py-2 hover:bg-indigo-50 hover:text-indigo-600 transition-colors ${
-                    salesTimeRange === opt ? 'font-bold text-indigo-600 bg-indigo-50/50' : 'text-slate-700'
+                    salesTimeRange === option ? 'font-bold text-indigo-600 bg-indigo-50/50' : 'text-slate-700'
                   }`}
                 >
-                  {opt}
+                  {option}
                 </button>
               ))}
             </div>
@@ -128,164 +260,255 @@ export default function SalesChartSection() {
         </div>
       </div>
 
-      {/* Chart Area */}
-      <div className="mt-4 relative">        {/* Active Point Floating Tooltip */}
+      {/* Legend */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+        {SERIES.map(series => (
+          <span key={series.key} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+            <span className="w-3.5 h-1.5 rounded-full" style={{ backgroundColor: series.color }} />
+            {series.label}
+          </span>
+        ))}
+      </div>
+
+      {/* Chart */}
+      <div className="mt-2 relative">
         {activePoint && (
           <div
-            className="absolute z-10 -top-8 px-2.5 py-1 rounded-md bg-[#1E1B4B] text-white text-xs font-semibold shadow-lg -translate-x-1/2 pointer-events-none transition-all duration-150 flex items-center gap-1"
-            style={{
-              left: `${((activePoint.x / svgWidth) * 100).toFixed(2)}%`,
-              maxWidth: '90%'
-            }}
+            className="absolute z-20 top-1 px-3 py-2 rounded-xl bg-[#1E1B4B] text-white shadow-lg pointer-events-none -translate-x-1/2"
+            style={{ left: tooltipX }}
           >
-            <span className="whitespace-nowrap">{activePoint.date}:</span>
-            <span className="text-emerald-400 whitespace-nowrap">{formatCurrency(activePoint.amount)}</span>
+            <p className="text-[10px] font-semibold text-slate-300 whitespace-nowrap">{activePoint.fullDate}</p>
+            <div className="mt-1 space-y-0.5">
+              {SERIES.map(series => (
+                <div key={series.key} className="flex items-center justify-between gap-4 text-[11px] whitespace-nowrap">
+                  <span className="flex items-center gap-1.5 text-slate-300">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: series.color }} />
+                    {series.label}
+                  </span>
+                  <span className={`font-bold ${series.key === 'profit' && activePoint.profit < 0 ? 'text-rose-300' : 'text-white'}`}>
+                    {formatCurrency(activePoint[series.key])}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* SVG Responsive Line Chart */}
-        <div className="w-full overflow-hidden">
+        <div
+          ref={plotRef}
+          tabIndex={0}
+          role="img"
+          onKeyDown={handleKeyDown}
+          onBlur={() => setActiveIndex(null)}
+          aria-label={`${salesTimeRange}: sales ${formatCurrency(totals.sales)}, expenses ${formatCurrency(totals.expense)}, net profit ${formatCurrency(totals.profit)}`}
+          className="relative w-full h-48 sm:h-56 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-indigo-200"
+        >
           <svg
-            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-            className="w-full h-40 sm:h-48 overflow-visible"
-            preserveAspectRatio="none"
+            viewBox={`0 0 ${geometry.width} ${geometry.height}`}
+            className="block w-full h-full overflow-visible"
           >
             <defs>
               <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#6366F1" stopOpacity="0.25" />
-                <stop offset="100%" stopColor="#6366F1" stopOpacity="0.0" />
+                <stop offset="0%" stopColor={SERIES[0].color} stopOpacity="0.22" />
+                <stop offset="100%" stopColor={SERIES[0].color} stopOpacity="0.0" />
               </linearGradient>
             </defs>
 
-            {/* Legend */}
-            <g>
-              <rect x={paddingX} y="2" width="8" height="3" rx="1.5" fill="#4F46E5" />
-              <text x={paddingX + 12} y="6" fontSize="7" fill="#64748B">Sales</text>
-              <rect x={paddingX + 52} y="2" width="8" height="3" rx="1.5" fill="#F59E0B" />
-              <text x={paddingX + 64} y="6" fontSize="7" fill="#64748B">Profit</text>
-            </g>
+            {/* Empty state: a bare baseline instead of meaningless tick values */}
+            {!hasData && (
+              <line
+                x1={PAD.left}
+                y1={geometry.yFor(0)}
+                x2={geometry.width - PAD.right}
+                y2={geometry.yFor(0)}
+                stroke="#E2E8F0"
+                strokeWidth="1"
+              />
+            )}
 
-            {/* Subtle Horizontal Grid lines */}
-            {[0.25, 0.5, 0.75, 1.0].map((ratio, i) => {
-              const y = (svgHeight - paddingY) - ratio * (svgHeight - paddingY * 2);
+            {/* Grid lines with their value labels */}
+            {hasData && scale.ticks.map((tick) => {
+              const y = geometry.yFor(tick);
+              const isZero = tick === 0;
               return (
-                <line
-                  key={i}
-                  x1={paddingX}
-                  y1={y}
-                  x2={svgWidth - paddingX}
-                  y2={y}
-                  stroke="#F1F5F9"
-                  strokeWidth="1"
-                  strokeDasharray="4 4"
+                <g key={tick}>
+                  <line
+                    x1={PAD.left}
+                    y1={y}
+                    x2={geometry.width - PAD.right}
+                    y2={y}
+                    stroke={isZero && scale.min < 0 ? '#CBD5E1' : '#F1F5F9'}
+                    strokeWidth="1"
+                    strokeDasharray={isZero && scale.min < 0 ? undefined : '4 4'}
+                  />
+                  <text
+                    x={PAD.left - 8}
+                    y={y + 3}
+                    textAnchor="end"
+                    fontSize="9"
+                    fill="#94A3B8"
+                  >
+                    {compactINR(tick)}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Expense bars */}
+            {hasData && geometry.points.map((point) => {
+              const top = Math.min(point.yExpense, geometry.baseline);
+              const height = Math.abs(geometry.baseline - point.yExpense);
+              if (height < 0.5) return null;
+              return (
+                <rect
+                  key={`bar-${point.key}`}
+                  x={point.x - geometry.barWidth / 2}
+                  y={top}
+                  width={geometry.barWidth}
+                  height={height}
+                  rx="2"
+                  fill={SERIES[1].color}
+                  fillOpacity="0.45"
                 />
               );
             })}
 
-            {/* Base axis */}
-            <line
-              x1={paddingX}
-              y1={svgHeight - paddingY}
-              x2={svgWidth - paddingX}
-              y2={svgHeight - paddingY}
-              stroke="#E2E8F0"
-              strokeWidth="1"
-            />
-
-            {/* Area Fill */}
-            <path d={areaPath} fill="url(#salesGradient)" />
+            {/* Sales area + line */}
+            {hasData && <path d={salesArea} fill="url(#salesGradient)" />}
+            {hasData && (
+              <path
+                d={salesPath}
+                fill="none"
+                stroke={SERIES[0].color}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
 
             {/* Profit line (sales − expenses per bucket) */}
-            <path
-              d={profitPath}
-              fill="none"
-              stroke="#F59E0B"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray="6 3"
-            />
-
-            {/* Profit points */}
-            {points.map((pt, i) => (
-              <circle
-                key={`p-${i}`}
-                cx={pt.x}
-                cy={pt.yProfit}
-                r="2.5"
-                fill="#FFFFFF"
-                stroke="#F59E0B"
-                strokeWidth="2"
-                className="pointer-events-none"
+            {hasData && (
+              <path
+                d={profitPath}
+                fill="none"
+                stroke={SERIES[2].color}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               />
-            ))}
+            )}
 
-            {/* Line Path */}
-            <path
-              d={linePath}
-              fill="none"
-              stroke="#4F46E5"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+            {/* Crosshair for the active bucket */}
+            {activePoint && (
+              <line
+                x1={activePoint.x}
+                y1={PAD.top}
+                x2={activePoint.x}
+                y2={geometry.height - PAD.bottom}
+                stroke="#CBD5E1"
+                strokeWidth="1"
+                strokeDasharray="3 3"
+              />
+            )}
+
+            {/* Data points */}
+            {hasData && geometry.points.map((point) => {
+              const isActive = activePoint?.key === point.key;
+              return (
+                <g key={`pt-${point.key}`} className="pointer-events-none">
+                  <circle
+                    cx={point.x}
+                    cy={point.ySales}
+                    r={isActive ? 4.5 : 3}
+                    fill="#FFFFFF"
+                    stroke={SERIES[0].color}
+                    strokeWidth="2"
+                  />
+                  <circle
+                    cx={point.x}
+                    cy={point.yProfit}
+                    r={isActive ? 4 : 2.5}
+                    fill="#FFFFFF"
+                    stroke={SERIES[2].color}
+                    strokeWidth="1.8"
+                  />
+                </g>
+              );
+            })}
+
+            {/* Single hit target across the plot, snapping to the nearest bucket */}
+            <rect
+              x={PAD.left}
+              y={PAD.top}
+              width={geometry.plotWidth}
+              height={geometry.plotHeight}
+              fill="transparent"
+              className="cursor-crosshair"
+              onPointerMove={handlePointer}
+              onPointerDown={handlePointer}
+              onPointerLeave={() => setActiveIndex(null)}
             />
-
-            {/* Interactive Data Points (Touch & Mouse accessible) */}
-            {points.map((pt, i) => (
-              <g
-                key={i}
-                className="cursor-pointer"
-                onMouseEnter={() => setActivePoint(pt)}
-                onMouseLeave={() => setActivePoint(null)}
-                onTouchStart={() => setActivePoint(pt)}
-                onTouchEnd={() => setTimeout(() => setActivePoint(null), 1800)}
-              >
-                {/* Hit target radius */}
-                <circle cx={pt.x} cy={pt.y} r="14" fill="transparent" />
-                
-                {/* Visual point */}
-                <circle
-                  cx={pt.x}
-                  cy={pt.y}
-                  r={activePoint?.date === pt.date ? "5" : "3.5"}
-                  fill="#FFFFFF"
-                  stroke="#4F46E5"
-                  strokeWidth="2.5"
-                  className="transition-all duration-150"
-                />
-              </g>
-            ))}
           </svg>
+
+          {!hasData && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
+              <p className="text-xs font-semibold text-slate-500">No sales or expenses in this period</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Pick another range or record a sale to see the chart</p>
+            </div>
+          )}
         </div>
 
-        {/* Horizontal Dates Axis: 1 Sep to 28 Sep */}
-        <div className="flex justify-between items-center text-[10px] sm:text-xs text-slate-400 font-medium px-1 sm:px-4 mt-1 select-none">
-          {timeline.map((item) => (
-            <span
-              key={item.date}
-              className={`transition-colors ${
-                activePoint?.date === item.date ? 'text-indigo-600 font-bold' : ''
-              }`}
-            >
-              {item.date}
-            </span>
-          ))}
+        {/* Date labels, positioned under each bucket's real x coordinate */}
+        <div className="relative h-4 mt-1 select-none">
+          {labelPoints.map((point) => {
+            const isActive = activePoint?.key === point.key;
+            return (
+              <span
+                key={point.key}
+                className={`absolute -translate-x-1/2 text-[10px] font-medium transition-colors ${
+                  isActive ? 'text-indigo-600 font-bold' : 'text-slate-400'
+                }`}
+                style={{ left: point.x }}
+              >
+                {point.date}
+              </span>
+            );
+          })}
         </div>
       </div>
 
-      {/* Footer Snapshot & Quick Stats */}
-      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-        <div className="flex items-center gap-1.5 text-[11px]">
-          <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-          <span className="font-semibold text-slate-700">
-            {currentData.totalSale > 0
-              ? `${currentData.transactions.filter(t => t.type === 'sale').length} invoice(s) recorded`
-              : '0 invoices recorded'}
-          </span>
+      {/* Summary strip for the same window */}
+      <div className="mt-3 pt-3 border-t border-slate-100">
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-xl bg-slate-50 px-2.5 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Sales</p>
+            <p className="text-xs sm:text-sm font-bold text-slate-900">{formatCurrency(totals.sales)}</p>
+          </div>
+          <div className="rounded-xl bg-rose-50/70 px-2.5 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-400">Expenses</p>
+            <p className="text-xs sm:text-sm font-bold text-rose-600">{formatCurrency(totals.expense)}</p>
+          </div>
+          <div className={`rounded-xl px-2.5 py-2 ${totals.profit < 0 ? 'bg-rose-50/70' : 'bg-emerald-50/70'}`}>
+            <p className={`text-[10px] font-semibold uppercase tracking-wide ${totals.profit < 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
+              Net profit
+            </p>
+            <p className={`text-xs sm:text-sm font-bold ${totals.profit < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+              {formatCurrency(totals.profit)}
+            </p>
+          </div>
         </div>
-        <div className="text-[11px] text-slate-400 flex items-center gap-1">
-          <Info className="w-3 h-3" />
-          <span>Real-time local tracking</span>
+
+        <div className="mt-2.5 flex items-center justify-between text-xs text-slate-500">
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="font-semibold text-slate-700">
+              {totals.invoices} invoice(s) in {salesTimeRange.toLowerCase()}
+            </span>
+          </div>
+          <div className="text-[11px] text-slate-400 flex items-center gap-1">
+            <Info className="w-3 h-3" />
+            <span>Real-time local tracking</span>
+          </div>
         </div>
       </div>
     </section>
