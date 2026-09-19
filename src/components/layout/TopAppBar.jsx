@@ -1,6 +1,7 @@
 import React from 'react';
 import { Menu, Search, Plus, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
+import AccountButton from './AccountButton';
 
 export default function TopAppBar() {
   const {
@@ -53,8 +54,11 @@ export default function TopAppBar() {
           </div>
         </div>
 
-        {/* Center / Right Section: Offline Sync Pill, Search & Actions */}
+        {/* Center / Right Section: Account, Offline Sync Pill, Search & Actions */}
         <div className="flex items-center gap-1.5 sm:gap-3">
+          {/* Optional Google sign-in (never gates the app) */}
+          <AccountButton />
+
           {/* Online/Offline & Sync Status Pill */}
           <button
             onClick={manualSync}

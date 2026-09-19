@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { subscribeVendors, insertVendor, refreshFromServer } from '../lib/firestoreApi';
+import { useAuthUser } from '../lib/auth';
 
 // ---------------------------------------------------------------------------
 // useVendors — live list of clients/suppliers, backed by Firestore.
@@ -8,6 +9,7 @@ import { subscribeVendors, insertVendor, refreshFromServer } from '../lib/firest
 // ---------------------------------------------------------------------------
 
 export function useVendors() {
+  const user = useAuthUser();
   const [vendors, setVendors] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -21,7 +23,8 @@ export function useVendors() {
       },
       (message) => setError(message || 'Failed to load vendors')
     );
-  }, []);
+    // Re-subscribes on sign-in/out so the list matches who is signed in.
+  }, [user?.uid]);
 
   // Submit handler for the persistent form. Works offline: the row lands in
   // Firestore's cache immediately and uploads when a connection is available.

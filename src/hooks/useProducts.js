@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { subscribeInventory, toProductShape } from '../lib/firestoreApi';
+import { useAuthUser } from '../lib/auth';
 
 // ---------------------------------------------------------------------------
 // useProducts — live view of the product catalog for pickers.
@@ -8,6 +9,7 @@ import { subscribeInventory, toProductShape } from '../lib/firestoreApi';
 // ---------------------------------------------------------------------------
 
 export function useProducts() {
+  const user = useAuthUser();
   const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -20,7 +22,8 @@ export function useProducts() {
       },
       (message) => setError(message || 'Failed to load products')
     );
-  }, []);
+    // Re-subscribes on sign-in/out so the catalog matches who is signed in.
+  }, [user?.uid]);
 
   return { products, isLoading, error };
 }

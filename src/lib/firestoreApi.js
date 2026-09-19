@@ -6,12 +6,15 @@ import {
   updateDoc,
   increment,
   onSnapshot,
+  getDocs,
   getDocsFromCache,
   query,
-  orderBy,
+  where,
+  writeBatch,
   enableNetwork
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebaseClient';
+import { ownerOf } from './auth';
 
 // ---------------------------------------------------------------------------
 // Firestore data layer — owns the app's three collections:
@@ -46,21 +49,41 @@ function commit(write, what) {
   write.catch((err) => console.warn(`${what} could not be saved:`, err.message));
 }
 
+// Ownership: a document carries its writer's uid, which is what lets the
+// owner-scoped rules separate one account's ledger from another's (see
+// firestore.rules.owner-scoped). Signed out, `ownerOf()` is null and documents
+// are written exactly as they always were, which is what keeps the app usable
+// before sign-in is provisioned.
+function owned(fields) {
+  const uid = ownerOf();
+  return uid ? { ...fields, ownerId: uid } : fields;
+}
+
+const byCreatedAtDesc = (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0);
+const byNameAsc = (a, b) => String(a.item_name || '').localeCompare(String(b.item_name || ''));
+
 // Live view of a collection. `onData(rows, pendingWrites, fromCache)` fires
 // first from the local cache (instantly, even offline) and again whenever the
 // server agrees. Cached rows stay usable even when the listener reports an
 // error, so read failures are surfaced through `onError` rather than thrown.
-function subscribeCollection(name, onData, { orderField, direction = 'desc', onError } = {}) {
+//
+// Once someone is signed in the query is scoped to their uid; signed out it
+// reads the whole collection, as it always did. Sorting happens here rather
+// than through `orderBy` both to keep those two modes in the same order and
+// because scoping plus a server sort would need a composite index.
+function subscribeCollection(name, onData, { compare, onError } = {}) {
   if (!isFirebaseConfigured || !db) {
     onData([], 0, true);
     return () => {};
   }
 
   const base = collection(db, name);
-  const target = orderField ? query(base, orderBy(orderField, direction)) : base;
+  const uid = ownerOf();
+  const target = uid ? query(base, where('ownerId', '==', uid)) : base;
 
   const publish = (snap) => {
     const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    if (compare) rows.sort(compare);
     const pending = snap.docs.filter((d) => d.metadata.hasPendingWrites).length;
     onData(rows, pending, snap.metadata.fromCache);
   };
@@ -94,15 +117,15 @@ export async function refreshFromServer() {
 }
 
 export function subscribeTransactions(onData, onError) {
-  return subscribeCollection(TRANSACTIONS, onData, { orderField: 'created_at', onError });
+  return subscribeCollection(TRANSACTIONS, onData, { compare: byCreatedAtDesc, onError });
 }
 
 export function subscribeInventory(onData, onError) {
-  return subscribeCollection(INVENTORY, onData, { orderField: 'item_name', direction: 'asc', onError });
+  return subscribeCollection(INVENTORY, onData, { compare: byNameAsc, onError });
 }
 
 export function subscribeVendors(onData, onError) {
-  return subscribeCollection(VENDORS, onData, { orderField: 'created_at', onError });
+  return subscribeCollection(VENDORS, onData, { compare: byCreatedAtDesc, onError });
 }
 
 // ---- Transactions ----
@@ -114,7 +137,7 @@ export function addTransaction(record) {
   assertConfigured();
   const ref = doc(collection(db, TRANSACTIONS));
   commit(
-    setDoc(ref, { ...record, created_at: record.created_at || new Date().toISOString() }),
+    setDoc(ref, owned({ ...record, created_at: record.created_at || new Date().toISOString() })),
     'Transaction'
   );
   return ref.id;
@@ -161,7 +184,7 @@ export function normalizeItemForUI(row) {
 export function saveInventoryItem(payload, existingId = null) {
   assertConfigured();
   const ref = existingId ? doc(db, INVENTORY, existingId) : doc(collection(db, INVENTORY));
-  commit(setDoc(ref, payload, { merge: true }), 'Item');
+  commit(setDoc(ref, owned(payload), { merge: true }), 'Item');
   return ref.id;
 }
 
@@ -195,7 +218,35 @@ export function insertVendor(vendor) {
     created_at: new Date().toISOString()
   };
 
+  const stored = owned(row);
   const ref = doc(collection(db, VENDORS));
-  commit(setDoc(ref, row), 'Vendor');
-  return { id: ref.id, ...row };
+  commit(setDoc(ref, stored), 'Vendor');
+  return { id: ref.id, ...stored };
+}
+
+// ---- Ownership ----
+
+// One-time adoption of the ledger written before sign-in existed: every
+// document with no ownerId is stamped with the signed-in uid, so releasing the
+// owner-scoped rules (which deny documents that aren't owned) can't lock the
+// existing data away. Idempotent — once stamped, nothing matches again — and
+// offline-safe, since the stamps queue in the cache like any other write.
+// Firestore can't query for an absent field, so each collection is read and
+// filtered locally; a personal ledger is small and this runs at sign-in.
+export async function claimUnownedDocuments(uid) {
+  if (!uid || !isFirebaseConfigured || !db) return 0;
+
+  let claimed = 0;
+  for (const name of [TRANSACTIONS, INVENTORY, VENDORS]) {
+    const snap = await getDocs(collection(db, name));
+    const orphans = snap.docs.filter((d) => !d.data().ownerId);
+    // Batches cap at 500 writes, so a large ledger is stamped in chunks.
+    for (let i = 0; i < orphans.length; i += 400) {
+      const batch = writeBatch(db);
+      orphans.slice(i, i + 400).forEach((d) => batch.update(d.ref, { ownerId: uid }));
+      await batch.commit();
+      claimed += Math.min(400, orphans.length - i);
+    }
+  }
+  return claimed;
 }

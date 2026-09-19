@@ -7,8 +7,10 @@ import {
   addTransaction,
   deleteTransaction as deleteTransactionDoc,
   saveInventoryItem,
-  normalizeItemForUI
+  normalizeItemForUI,
+  claimUnownedDocuments
 } from '../lib/firestoreApi';
+import { useAuthUser, signInWithGoogle, signOutOwner } from '../lib/auth';
 import { buildSalesTimeline, summarizeTimeline, DEFAULT_RANGE } from '../utils/salesTimeline';
 import { DEFAULT_BUSINESS_INFO } from '../data/businessProfile';
 
@@ -19,6 +21,10 @@ const DashboardContext = createContext();
 const PLACEHOLDER_BUSINESS_NAME = 'SwiftBill Store';
 
 export function DashboardProvider({ children }) {
+  // Sign-in is optional: signed out (or before the project has an auth
+  // configuration at all) nothing below behaves any differently. See lib/auth.
+  const user = useAuthUser();
+
   // Time range filter for sales chart
   const [salesTimeRange, setSalesTimeRange] = useState(DEFAULT_RANGE);
 
@@ -77,6 +83,7 @@ export function DashboardProvider({ children }) {
   // 1. Live data from Firestore. Subscribing covers what the old hand-rolled
   // sync loop did by hand: cached rows render instantly, local writes appear
   // optimistically, and the server's version replaces them when it lands.
+  // Re-runs on sign-in/out so reads switch between scoped and unscoped.
   useEffect(() => {
     let pendingTx = 0;
     let pendingItems = 0;
@@ -85,9 +92,7 @@ export function DashboardProvider({ children }) {
     const unsubTransactions = subscribeTransactions((rows, pending, fromCache) => {
       pendingTx = pending;
       publishPending();
-      setTransactions(
-        rows.slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
-      );
+      setTransactions(rows);
       setIsLoading(false);
       if (!fromCache) setLastSynced(new Date().toLocaleTimeString());
     });
@@ -111,7 +116,19 @@ export function DashboardProvider({ children }) {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
+  }, [user?.uid]);
+
+  // Adopt the ledger written before sign-in existed the first time someone
+  // signs in, so releasing the owner-scoped rules can't lock it away.
+  useEffect(() => {
+    const uid = user?.uid;
+    if (!uid) return;
+    claimUnownedDocuments(uid)
+      .then((count) => {
+        if (count > 0) console.info(`Attached ${count} existing record(s) to your account`);
+      })
+      .catch((err) => console.warn('Could not attach existing records:', err.message));
+  }, [user?.uid]);
 
   // All-time totals for the summary cards; the chart owns the range-scoped ones
   const totalReceivable = useMemo(() => {
@@ -291,7 +308,11 @@ export function DashboardProvider({ children }) {
     lastSynced,
     isOnline,
     pendingSyncCount,
-    manualSync
+    manualSync,
+    // Accounts (optional — the app works signed out)
+    user,
+    signIn: signInWithGoogle,
+    signOut: signOutOwner
   };
 
   return (
