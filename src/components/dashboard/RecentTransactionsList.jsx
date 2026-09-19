@@ -1,9 +1,20 @@
-import React from 'react';
-import { ArrowUpRight, ArrowDownLeft, Clock, FileText, ChevronRight, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowUpRight, ArrowDownLeft, Clock, FileText, ChevronRight, Trash2, X } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 
 export default function RecentTransactionsList() {
   const { currentData, setActiveReportModal, deleteTransaction } = useDashboard();
+
+  // Two-tap delete: the first tap arms the row's button, the second deletes.
+  // Replaces a window.confirm(), which blocked the whole page — hostile on a
+  // phone at a counter, and it froze automated UI driving twice before.
+  const [armedId, setArmedId] = useState(null);
+  useEffect(() => {
+    if (armedId === null) return;
+    const disarm = () => setArmedId(null);
+    const timer = setTimeout(disarm, 4000);
+    return () => clearTimeout(timer);
+  }, [armedId]);
 
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('en-IN', {
@@ -15,11 +26,14 @@ export default function RecentTransactionsList() {
 
   const transactions = currentData.transactions.slice(0, 5);
 
-  const handleDelete = async (e, tx) => {
+  const handleDeleteTap = (e, tx) => {
     e.stopPropagation(); // don't trigger the row's report-modal open
-    const label = tx.type === 'sale' ? 'receivable' : 'payable';
-    if (!window.confirm(`Delete this ${label} of ${formatCurrency(tx.amount)} for ${tx.party_name || tx.partyName || (tx.type === 'sale' ? 'Cash Customer' : 'Supplier')}? This cannot be undone.`)) return;
-    await deleteTransaction(tx.id);
+    if (armedId !== tx.id) {
+      setArmedId(tx.id);
+      return;
+    }
+    setArmedId(null);
+    deleteTransaction(tx.id);
   };
 
   return (
@@ -122,14 +136,34 @@ export default function RecentTransactionsList() {
                       {tx.type}
                     </div>
                   </div>
-                  <button
-                    onClick={(e) => handleDelete(e, tx)}
-                    title="Delete entry"
-                    aria-label={`Delete transaction ${String(tx.id).slice(0, 8)}`}
-                    className="p-1.5 rounded-lg text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {armedId === tx.id ? (
+                    <span className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={(e) => handleDeleteTap(e, tx)}
+                        title="Tap again to delete — this cannot be undone"
+                        aria-label={`Confirm delete transaction ${String(tx.id).slice(0, 8)}`}
+                        className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold cursor-pointer shrink-0"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setArmedId(null); }}
+                        aria-label="Keep transaction"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={(e) => handleDeleteTap(e, tx)}
+                      title="Delete entry"
+                      aria-label={`Delete transaction ${String(tx.id).slice(0, 8)}`}
+                      className="p-1.5 rounded-lg text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             );
