@@ -10,20 +10,24 @@ import {
   Share2,
   FileDown,
   CheckCircle2,
-  Sparkles,
-  QrCode,
   User,
-  Tags,
-  IndianRupee,
   ShoppingBag,
-  ExternalLink,
   ChevronDown,
   Users
 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 import { useVendors } from '../../hooks/useVendors';
-import { generateUpiQrCodeDataUrl, generateInvoicePdf, shareInvoiceOnWhatsApp } from '../../utils/posUtilities';
+import { DEFAULT_BUSINESS_INFO } from '../../data/businessProfile';
+import { computeBillTotals } from '../../utils/billTotals';
+
+// Bill figures are shown to the paisa; the cart total itself stays whole rupees
+const inr = (value) => `₹${Number(value || 0).toLocaleString('en-IN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+})}`;
+import { generateUpiQrCodeDataUrl, generateInvoicePdf, shareInvoiceOnWhatsApp, invoiceFileName } from '../../utils/posUtilities';
 import BarcodeScannerModal from './BarcodeScannerModal';
+import InvoiceDocument from './InvoiceDocument';
 
 // Demo inventory used until the merchant adds real items (stable identity,
 // defined at module scope so it doesn't break memoization below).
@@ -148,27 +152,36 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
     });
   }, [rawCart, pricingTier, inventoryItems]);
 
-  // Cart total calculations
-  const cartTotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + Number(item.total || 0), 0);
-  }, [cart]);
+  // The money block for this bill — sub total, discount, GST, round off, total
+  // — from the same module the printed document and the PDF use.
+  const bill = useMemo(() => computeBillTotals(cart, businessInfo), [cart, businessInfo]);
+  const payableTotal = bill.total;
 
-  // Dynamic merchant UPI ID & Business Info from Context
-  const merchantUpiId = businessInfo.upiId || 'jaggusts@okhdfcbank';
-  const merchantName = businessInfo.name || 'SwiftBill Store';
+  // Dynamic merchant UPI ID & Business Info from Context (no QR without a VPA)
+  const merchantUpiId = businessInfo.upiId || '';
+  const merchantName = businessInfo.name || DEFAULT_BUSINESS_INFO.name;
 
   // Update dynamic UPI QR code whenever total changes (guard against
   // out-of-order async resolution after rapid total changes)
   useEffect(() => {
     let cancelled = false;
-    if (cartTotal > 0) {
-      generateUpiQrCodeDataUrl(merchantUpiId, merchantName, cartTotal, 'INV-PREVIEW')
+    if (payableTotal > 0 && merchantUpiId) {
+      generateUpiQrCodeDataUrl(merchantUpiId, merchantName, payableTotal, 'INV-PREVIEW')
         .then(url => { if (!cancelled) setUpiQrUrl(url); });
     } else {
       setUpiQrUrl(null);
     }
     return () => { cancelled = true; };
-  }, [cartTotal, merchantUpiId, merchantName]);
+  }, [payableTotal, merchantUpiId, merchantName]);
+
+  // The browser writes document.title into its printed page header and into the
+  // save-as filename, so the bill borrows the page title while it is on screen
+  useEffect(() => {
+    if (!isCompleted || !completedInvoice) return;
+    const previousTitle = document.title;
+    document.title = `${merchantName} — ${completedInvoice.id}`;
+    return () => { document.title = previousTitle; };
+  }, [isCompleted, completedInvoice, merchantName]);
 
   // Add item to cart: store the item's own prices; the derived `cart`
   // recomputes rate/total from the current tier, so no manual math here.
@@ -245,10 +258,14 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
     const invoice = {
       id: `INV-${Math.floor(100000 + Math.random() * 900000)}`,
       date: new Date().toLocaleDateString('en-IN'),
-      amount: cartTotal,
+      amount: payableTotal,
       party_name: customerName.trim() || 'Cash Customer',
       customer_phone: customerPhone.trim(),
       pricing_tier: pricingTier,
+      payment_mode: 'Cash',
+      // Snapshot the money block so a reprint can never disagree with what the
+      // customer was charged, even if the settings change later
+      totals: bill,
       items_json: cart
     };
 
@@ -256,8 +273,8 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
     await addSale(invoice);
     // Snapshot the exact-amount QR for the receipt BEFORE resetting the
     // cart state (which clears the live preview QR)
-    const receiptQr = cartTotal > 0
-      ? await generateUpiQrCodeDataUrl(merchantUpiId, merchantName, cartTotal, invoice.id)
+    const receiptQr = payableTotal > 0 && merchantUpiId
+      ? await generateUpiQrCodeDataUrl(merchantUpiId, merchantName, payableTotal, invoice.id)
       : null;
     setReceiptQrUrl(receiptQr);
     setCompletedInvoice(invoice);
@@ -277,7 +294,7 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
     setIsGeneratingPdf(true);
     try {
       const doc = await generateInvoicePdf(completedInvoice, businessInfo);
-      doc.save(`${completedInvoice.id}.pdf`);
+      doc.save(`${invoiceFileName(completedInvoice, businessInfo)}.pdf`);
     } catch (e) {
       console.error(e);
     } finally {
@@ -317,7 +334,7 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
         className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs transition-opacity"
       />
 
-      <div className="print-area fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-3xl shadow-2xl flex flex-col max-h-[92vh] sm:max-w-xl sm:mx-auto transition-transform duration-300 animate-slideUp overflow-hidden">
+      <div className="print-sheet fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-3xl shadow-2xl flex flex-col max-h-[92vh] sm:max-w-xl sm:mx-auto transition-transform duration-300 animate-slideUp overflow-hidden">
         {/* Drag handle */}
         <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mt-2.5 mb-1 cursor-grab"></div>
 
@@ -345,16 +362,15 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
         </div>
 
         {/* Sheet Content Body */}
-        <div className="p-4 overflow-y-auto flex-1 text-left space-y-4">
+        <div className="print-sheet-body p-4 overflow-y-auto flex-1 text-left space-y-4">
           {isCompleted ? (
-            /* SUCCESS CONFIRMATION & RECEIPT ACTIONS */
-            <div className="text-center py-4 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
-                <CheckCircle2 className="w-9 h-9 stroke-[2.5]" />
-              </div>
-
-              <div>
-                <h3 className="text-lg font-black text-slate-900">
+            /* THE BILL: confirmation chrome on screen, invoice document on paper */
+            <div className="space-y-4">
+              <div className="text-center">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
+                  <CheckCircle2 className="w-7 h-7 stroke-[2.5]" />
+                </div>
+                <h3 className="text-lg font-black text-slate-900 mt-2">
                   ₹{Number(completedInvoice.amount).toLocaleString('en-IN')} Paid
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -362,32 +378,17 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
                 </p>
               </div>
 
-              {/* Dynamic UPI QR Code Display on Screen */}
-              {receiptQrUrl && (
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 inline-block mx-auto text-center shadow-xs">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-900 mb-2 flex items-center justify-center gap-1.5">
-                    <QrCode className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Dynamic UPI Payment QR</span>
-                  </div>
-                  <img
-                    src={receiptQrUrl}
-                    alt="UPI Payment QR Code"
-                    className="w-44 h-44 mx-auto rounded-xl shadow-xs border border-slate-200"
-                  />
-                  <div className="mt-2.5 text-xs font-black text-emerald-600">
-                    Exact Amount: ₹{completedInvoice.amount.toFixed(2)}
-                  </div>
-                  <div className="mt-1 px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-100/80 text-[11px] font-mono text-indigo-900 select-all font-semibold">
-                    UPI: {merchantUpiId}
-                  </div>
-                  <div className="text-[10px] text-slate-400 mt-1">
-                    Scan with any UPI App (GPay / PhonePe / Paytm)
-                  </div>
-                </div>
-              )}
+              {/* The invoice document — .print-area is what reaches paper */}
+              <div className="print-area overflow-hidden rounded-2xl border border-slate-200">
+                <InvoiceDocument
+                  invoice={completedInvoice}
+                  business={businessInfo}
+                  qrDataUrl={receiptQrUrl}
+                />
+              </div>
 
-              {/* Delivery Action Buttons: WhatsApp & PDF & Thermal Print */}
-              <div className="space-y-2.5 pt-2">
+              {/* Delivery actions: kept outside .print-area so they never print */}
+              <div className="space-y-2.5 pt-1">
                 <button
                   onClick={handleWhatsAppShare}
                   className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95"
@@ -411,7 +412,7 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
                     className="py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Printer className="w-4 h-4 text-slate-600" />
-                    <span>Thermal Print</span>
+                    <span>Print Bill</span>
                   </button>
                 </div>
 
@@ -667,20 +668,47 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
                 )}
               </div>
 
-              {/* Dynamic Bill Summary & UPI QR Preview */}
-              {cartTotal > 0 && (
-                <div className="p-3 rounded-2xl bg-indigo-50/60 border border-indigo-100 flex items-center justify-between">
-                  <div>
-                    <div className="text-[11px] text-indigo-700 font-semibold uppercase">
-                      Total Cart Value
+              {/* Bill money block & UPI QR preview */}
+              {payableTotal > 0 && (
+                <div className="p-3 rounded-2xl bg-indigo-50/60 border border-indigo-100">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 space-y-0.5 text-[11px] text-indigo-900/80">
+                      <div className="flex items-center justify-between gap-4">
+                        <span>Sub Total</span>
+                        <span className="font-semibold">{inr(bill.subtotal)}</span>
+                      </div>
+                      {bill.discount > 0 && (
+                        <div className="flex items-center justify-between gap-4">
+                          <span>Discount ({bill.discountPercent}%)</span>
+                          <span className="font-semibold text-rose-600">(−) {inr(bill.discount)}</span>
+                        </div>
+                      )}
+                      {bill.tax > 0 && (
+                        <div className="flex items-center justify-between gap-4">
+                          <span>GST @ {bill.taxRate}% (included)</span>
+                          <span className="font-semibold">{inr(bill.tax)}</span>
+                        </div>
+                      )}
+                      {bill.roundOff !== 0 && (
+                        <div className="flex items-center justify-between gap-4">
+                          <span>Round Off</span>
+                          <span className="font-semibold">{bill.roundOff > 0 ? '+' : '−'} {inr(Math.abs(bill.roundOff))}</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-xl font-black text-indigo-950">
-                      ₹{cartTotal.toLocaleString('en-IN')}
+
+                    <div className="text-right shrink-0">
+                      <div className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider">
+                        Total
+                      </div>
+                      <div className="text-xl font-black text-indigo-950">
+                        ₹{payableTotal.toLocaleString('en-IN')}
+                      </div>
                     </div>
                   </div>
 
                   {upiQrUrl && (
-                    <div className="flex items-center gap-2">
+                    <div className="mt-2.5 pt-2.5 border-t border-indigo-100/80 flex items-center gap-2">
                       <img
                         src={upiQrUrl}
                         alt="UPI Preview"
@@ -688,7 +716,7 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
                       />
                       <div className="text-[10px] text-slate-500 text-left">
                         <span className="font-bold text-indigo-700 block">UPI Ready</span>
-                        <span>Auto ₹{cartTotal}</span>
+                        <span>Auto ₹{payableTotal}</span>
                       </div>
                     </div>
                   )}
@@ -702,7 +730,7 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
                 className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm sm:text-base shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2"
               >
                 <Receipt className="w-4 h-4" />
-                <span>Save Bill & Generate Invoice (₹{cartTotal})</span>
+                <span>Save Bill & Generate Invoice (₹{payableTotal})</span>
               </button>
             </>
           )}

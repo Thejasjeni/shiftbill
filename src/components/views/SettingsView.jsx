@@ -72,6 +72,45 @@ export default function SettingsView() {
             />
           </div>
         </div>
+
+        {/* Bill money block: both default to 0, so bills stay at the cart total */}
+        <div className="pt-1 border-t border-slate-100">
+          <h3 className="mt-3 text-xs font-bold text-slate-700 uppercase tracking-wider">Bill Totals</h3>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            Leave both at 0 and every bill is simply its cart total.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Discount on every bill (%)</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={businessInfo.discountPercent ?? 0}
+                onChange={(e) => setBusinessInfo({ ...businessInfo, discountPercent: Number(e.target.value) || 0 })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">Taken off the sub total before the bill total.</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">GST rate (%)</label>
+              <input
+                type="number"
+                min="0"
+                max="28"
+                step="0.5"
+                value={businessInfo.taxRate ?? 0}
+                onChange={(e) => setBusinessInfo({ ...businessInfo, taxRate: Number(e.target.value) || 0 })}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                Shown as the GST already included in your prices — it never changes the amount collected.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Open Source License & Data Privacy Card */}

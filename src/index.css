@@ -88,12 +88,15 @@
     size: 80mm auto;
     margin: 4mm;
   }
+  /* Both sides carry !important so no utility class on any app element can
+     re-reveal itself on paper: the hide wins on specificity, and the print
+     area (.print-area *) outranks it. */
   body * {
-    visibility: hidden;
+    visibility: hidden !important;
   }
   .print-area,
   .print-area * {
-    visibility: visible;
+    visibility: visible !important;
   }
   .print-area {
     position: absolute !important;
@@ -112,6 +115,43 @@
   /* A5 landscape-friendly layout for reports */
   .print-area .overflow-y-auto {
     overflow: visible !important;
+  }
+
+  /* POS checkout is a fixed bottom sheet: on paper it becomes a plain page at
+     the top, so the invoice document is neither clipped to 92vh nor pushed
+     down by the app shell above it. The slide-up animation's transform is
+     cleared too — a transformed ancestor would become the containing block
+     and drag the document down with it. */
+  .print-sheet {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    bottom: auto !important;
+    animation: none !important;
+    transform: none !important;
+    max-height: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  /* The scroll container must stop scrolling too, or an absolutely positioned
+     .print-area inside it inherits its scroll offset. */
+  .print-sheet-body {
+    overflow: visible !important;
+    max-height: none !important;
+    flex: none !important;
+    padding: 0 !important;
+  }
+
+  /* The document keeps .print-area's page-top positioning; only its card
+     chrome is dropped on paper. */
+  .print-sheet .print-area {
+    border: 0 !important;
+    border-radius: 0 !important;
   }
 }
 

@@ -21,17 +21,13 @@ import {
   endRemoteInsert
 } from '../database/offlineSync';
 import { buildSalesTimeline, summarizeTimeline, DEFAULT_RANGE } from '../utils/salesTimeline';
+import { DEFAULT_BUSINESS_INFO } from '../data/businessProfile';
 
 const DashboardContext = createContext();
 
-const DEFAULT_BUSINESS_INFO = {
-  name: "SwiftBill Store",
-  gstin: "29AABCU9603R1ZM",
-  city: "Main Store",
-  phone: "9495385472",
-  upiId: "jaggusts@okhdfcbank",
-  currency: "₹"
-};
+// The old shipped placeholder, kept here only so an upgraded install stops
+// billing under the app's own name (see the loader below)
+const PLACEHOLDER_BUSINESS_NAME = 'SwiftBill Store';
 
 export function DashboardProvider({ children }) {
   // Time range filter for sales chart
@@ -60,7 +56,14 @@ export function DashboardProvider({ children }) {
   const [businessInfo, setBusinessInfo] = useState(() => {
     try {
       const saved = localStorage.getItem('swiftbill_business_info');
-      if (saved) return { ...DEFAULT_BUSINESS_INFO, ...JSON.parse(saved) };
+      if (saved) {
+        const profile = JSON.parse(saved);
+        // The app used to default the business name to its own name; that was
+        // never a real choice, so fall back to the current default instead of
+        // printing it on bills. Everything the user entered is kept.
+        if (profile.name === PLACEHOLDER_BUSINESS_NAME) delete profile.name;
+        return { ...DEFAULT_BUSINESS_INFO, ...profile };
+      }
     } catch { /* ignore corrupt cache */ }
     return DEFAULT_BUSINESS_INFO;
   });
