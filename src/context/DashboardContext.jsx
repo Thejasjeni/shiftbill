@@ -12,6 +12,7 @@ import {
 } from '../lib/firestoreApi';
 import { useAuthUser, signInWithGoogle, signOutOwner } from '../lib/auth';
 import { buildSalesTimeline, summarizeTimeline, DEFAULT_RANGE } from '../utils/salesTimeline';
+import { countLowStock } from '../utils/stock';
 import { DEFAULT_BUSINESS_INFO } from '../data/businessProfile';
 
 const DashboardContext = createContext();
@@ -163,7 +164,8 @@ export function DashboardProvider({ children }) {
       salesRangeTotals,
       transactions,
       parties,
-      items
+      items,
+      lowStockCount: countLowStock(items)
     };
   }, [totalReceivable, totalPayable, transactions, parties, items, salesTimeline, salesRangeTotals]);
 
@@ -239,7 +241,8 @@ export function DashboardProvider({ children }) {
   };
 
   // 6. Items: add or edit. `wholesale_price` is NOT NULL in the catalog, so
-  // default it to the POS's own 85%-of-retail fallback.
+  // default it to the POS's own 85%-of-retail fallback. The low-stock threshold
+  // rides along so the warning badge survives reloads and devices.
   const upsertItem = (item, existingId = null) => {
     const price = Number(item.price) || 0;
     const serverPayload = {
@@ -247,7 +250,8 @@ export function DashboardProvider({ children }) {
       retail_price: price,
       wholesale_price: Number((price * 0.85).toFixed(2)),
       stock_quantity: Number(item.stock) || 0,
-      barcode: item.barcode || null
+      barcode: item.barcode || null,
+      low_stock_threshold: Number(item.lowStockThreshold) || 0
     };
 
     try {

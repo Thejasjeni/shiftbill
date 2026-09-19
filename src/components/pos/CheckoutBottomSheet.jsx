@@ -19,6 +19,7 @@ import { useDashboard } from '../../context/DashboardContext';
 import { useVendors } from '../../hooks/useVendors';
 import { DEFAULT_BUSINESS_INFO } from '../../data/businessProfile';
 import { computeBillTotals } from '../../utils/billTotals';
+import { stockState, stockOf } from '../../utils/stock';
 
 // Bill figures are shown to the paisa; the cart total itself stays whole rupees
 const inr = (value) => `₹${Number(value || 0).toLocaleString('en-IN', {
@@ -185,7 +186,12 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
 
   // Add item to cart: store the item's own prices; the derived `cart`
   // recomputes rate/total from the current tier, so no manual math here.
+  // A zero-stock item is still billable (the count may be stale), but the
+  // seller hears it before the bill says so.
   const addItemToCart = (item) => {
+    if (stockState(item) === 'out' && !item.id.startsWith('scanned-')) {
+      alert(`"${item.item_name || item.name}" is out of stock. Restock it from Items, or continue if the count is stale.`);
+    }
     setCart(prev => {
       const existing = prev.find(i => i.id === item.id);
       if (existing) {
@@ -593,6 +599,11 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
                         <div className="font-bold text-xs text-slate-800 truncate max-w-[130px]">
                           {item.item_name || item.name}
                         </div>
+                        {stockState(item) !== 'ok' && (
+                          <div className={`text-[10px] font-bold ${stockState(item) === 'out' ? 'text-rose-600' : 'text-amber-600'}`}>
+                            {stockState(item) === 'out' ? 'Out of stock' : `Low · ${stockOf(item)} left`}
+                          </div>
+                        )}
                         <div className="text-[11px] font-extrabold text-emerald-600 mt-0.5">
                           ₹{price.toFixed(0)}{' '}
                           <span className="text-[10px] text-slate-400 font-normal">

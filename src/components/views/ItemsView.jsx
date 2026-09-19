@@ -1,7 +1,22 @@
 import React, { useState } from 'react';
 import { Package, Plus, Search, X, PackagePlus, Pencil, Barcode as BarcodeIcon, Loader2 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
+import { stockState, thresholdOf, DEFAULT_LOW_STOCK_THRESHOLD } from '../../utils/stock';
 import BarcodeScannerModal from '../pos/BarcodeScannerModal';
+
+// Badge pair for one item's stock state, shared by the card and anywhere else
+// that shows it.
+function StockBadge({ item }) {
+  const state = stockState(item);
+  if (state === 'ok') return null;
+  const styles = state === 'out'
+    ? 'bg-rose-100 text-rose-700 border-rose-200'
+    : 'bg-amber-100 text-amber-800 border-amber-200';
+  const label = state === 'out' ? 'Out of stock' : `Low stock · ≤ ${thresholdOf(item)} ${item.unit || 'Pcs'}`;
+  return (
+    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${styles}`}>{label}</span>
+  );
+}
 
 export default function ItemsView() {
   const { currentData, setIsCheckoutOpen, upsertItem } = useDashboard();
@@ -18,9 +33,11 @@ export default function ItemsView() {
   const [stock, setStock] = useState('');
   const [unit, setUnit] = useState('Pcs');
   const [barcode, setBarcode] = useState('');
+  const [lowStockThreshold, setLowStockThreshold] = useState(String(DEFAULT_LOW_STOCK_THRESHOLD));
 
   const openAddModal = () => {
     setName(''); setCode(''); setPrice(''); setStock(''); setBarcode(''); setUnit('Pcs');
+    setLowStockThreshold(String(DEFAULT_LOW_STOCK_THRESHOLD));
     setEditingItem(null);
     setIsAddModalOpen(true);
   };
@@ -32,6 +49,7 @@ export default function ItemsView() {
     setStock(String(item.stock ?? item.stock_quantity ?? ''));
     setBarcode(item.barcode || '');
     setUnit(item.unit || 'Pcs');
+    setLowStockThreshold(String(item.lowStockThreshold ?? thresholdOf(item)));
     setEditingItem(item);
     setIsAddModalOpen(true);
   };
@@ -48,7 +66,8 @@ export default function ItemsView() {
         price: Number(price),
         stock: Number(stock || 0),
         unit,
-        barcode: barcode.trim() || null
+        barcode: barcode.trim() || null,
+        lowStockThreshold: Number(lowStockThreshold) || 0
       }, editingItem?.id || null);
       setIsAddModalOpen(false);
     } finally {
@@ -118,6 +137,7 @@ export default function ItemsView() {
                     {item.code}
                   </span>
                 </div>
+                <StockBadge item={item} />
                 <div className="mt-2 flex items-baseline gap-1">
                   <span className="text-lg font-extrabold text-indigo-600">₹{item.price}</span>
                   <span className="text-xs text-slate-400">/ {item.unit}</span>
@@ -131,7 +151,7 @@ export default function ItemsView() {
               </div>
 
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                <div className="text-xs text-slate-500">
+                <div className={`text-xs ${stockState(item) === 'out' ? 'text-rose-600' : stockState(item) === 'low' ? 'text-amber-700' : 'text-slate-500'}`}>
                   Stock: <strong className="text-slate-800">{item.stock} {item.unit}</strong>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -267,6 +287,22 @@ export default function ItemsView() {
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
                 </div>
+              </div>
+
+              {/* Low-stock alert: the level that turns the item's badge amber */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Low-stock alert at</label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder={String(DEFAULT_LOW_STOCK_THRESHOLD)}
+                  value={lowStockThreshold}
+                  onChange={(e) => setLowStockThreshold(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Warn when stock falls to this level or below. 0 turns the alert off.
+                </p>
               </div>
 
               <div className="pt-2 flex items-center gap-3">

@@ -176,7 +176,8 @@ export function normalizeItemForUI(row) {
     price: Number(row.retail_price ?? row.price ?? 0) || 0,
     stock: Number(row.stock_quantity ?? row.stock ?? 0) || 0,
     unit: row.unit || 'Pcs',
-    code: row.code || row.barcode || ''
+    code: row.code || row.barcode || '',
+    lowStockThreshold: row.low_stock_threshold
   };
 }
 

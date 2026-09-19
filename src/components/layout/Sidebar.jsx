@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 import { NAVIGATION_ITEMS } from '../../data/mockData';
+import { countLowStock } from '../../utils/stock';
 
 const ICONS_MAP = {
   LayoutDashboard,
@@ -42,9 +43,15 @@ export default function Sidebar() {
   const getDynamicCount = (id) => {
     if (!currentData) return null;
     if (id === 'parties') return currentData.parties.length || null;
-    if (id === 'items') return currentData.items.length || null;
-    if (id === 'sale') return currentData.transactions.filter(t => t.type === 'sale').length || null;
-    if (id === 'purchase') return currentData.transactions.filter(t => t.type === 'purchase').length || null;
+    // Items shows low/out-of-stock count (in amber) when there is any, else
+    // the total count — the number a shopkeeper needs is the warning one.
+    if (id === 'items') {
+      const low = countLowStock(currentData.items);
+      if (low > 0) return { value: low, tone: 'warn' };
+      return currentData.items.length ? { value: currentData.items.length, tone: 'plain' } : null;
+    }
+    if (id === 'sale') return { value: currentData.transactions.filter(t => t.type === 'sale').length || null, tone: 'plain' };
+    if (id === 'purchase') return { value: currentData.transactions.filter(t => t.type === 'purchase').length || null, tone: 'plain' };
     return null;
   };
 
@@ -148,12 +155,14 @@ export default function Sidebar() {
                   {getDynamicCount(item.id) && (
                     <span
                       className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        isActive
-                          ? 'bg-indigo-700/80 text-white'
-                          : 'bg-indigo-950 text-indigo-300 border border-indigo-800/60'
+                        getDynamicCount(item.id).tone === 'warn'
+                          ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                          : isActive
+                            ? 'bg-indigo-700/80 text-white'
+                            : 'bg-indigo-950 text-indigo-300 border border-indigo-800/60'
                       }`}
                     >
-                      {getDynamicCount(item.id)}
+                      {getDynamicCount(item.id).value}
                     </span>
                   )}
                 </button>
