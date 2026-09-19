@@ -2,48 +2,50 @@
 // Deliberately a plain module: the provider owns React state, this owns the numbers.
 
 const DATE_LABEL = { day: 'numeric', month: 'short' };
+const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const startOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1);
+const daysBefore = (date, days) => startOfDay(new Date(date.getFullYear(), date.getMonth(), date.getDate() - days));
 
-// Bucket counts are fixed per range, so a range is always drawable and its
-// bucket boundaries stay stable across renders (at least 6 buckets everywhere).
+// Each range is defined once: its window, its bucket count and its label format.
+// Bucket counts are fixed, so a range is always drawable and its boundaries stay
+// stable across renders (at least 6 buckets everywhere). A closed window (Last
+// Month) keeps its neighbouring months out; open windows run up to `now`, where a
+// timestamp a little ahead of this device's clock (server clock skew) still
+// belongs to the newest bucket rather than silently vanishing.
 const RANGE_SPECS = {
-  Today: { bucketCount: 6, labelFormat: { hour: 'numeric' } },
-  'This Week': { bucketCount: 7, labelFormat: DATE_LABEL },
-  'This Month': { bucketCount: 10, labelFormat: DATE_LABEL },
-  'Last Month': { bucketCount: 6, labelFormat: DATE_LABEL },
-  'This Quarter': { bucketCount: 10, labelFormat: DATE_LABEL }
+  Today: {
+    bucketCount: 6,
+    labelFormat: { hour: 'numeric' },
+    window: (now) => ({ start: startOfDay(now), end: null })
+  },
+  'This Week': {
+    bucketCount: 7,
+    labelFormat: DATE_LABEL,
+    window: (now) => ({ start: daysBefore(now, 6), end: null })
+  },
+  'This Month': {
+    bucketCount: 10,
+    labelFormat: DATE_LABEL,
+    window: (now) => ({ start: startOfMonth(now), end: null })
+  },
+  'Last Month': {
+    bucketCount: 6,
+    labelFormat: DATE_LABEL,
+    window: (now) => ({ start: new Date(now.getFullYear(), now.getMonth() - 1, 1), end: startOfMonth(now) })
+  },
+  'This Quarter': {
+    bucketCount: 10,
+    labelFormat: DATE_LABEL,
+    window: (now) => ({ start: daysBefore(now, 89), end: null })
+  }
 };
 
-const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-// The window a range covers: either a closed calendar window (Last Month, whose
-// strict end keeps this month's rows out) or an open one that runs up to `now`.
-export function rangeWindow(range, now = new Date()) {
-  const daysAgo = (days) => startOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days));
-
-  switch (range) {
-    case 'Today':
-      return { start: startOfDay(now), end: null };
-    case 'This Week':
-      return { start: daysAgo(6), end: null };
-    case 'Last Month':
-      return {
-        start: new Date(now.getFullYear(), now.getMonth() - 1, 1),
-        end: new Date(now.getFullYear(), now.getMonth(), 1)
-      };
-    case 'This Quarter':
-      return { start: daysAgo(89), end: null };
-    case 'This Month':
-    default:
-      return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: null };
-  }
-}
+const specFor = (range) => RANGE_SPECS[range] || RANGE_SPECS['This Month'];
 
 // Sales, expenses and profit per bucket for one range.
-// A timestamp stamped slightly ahead of this device's clock (server clock skew)
-// still belongs to the newest bucket rather than silently vanishing.
 export function buildSalesTimeline(transactions, range, now = new Date()) {
-  const spec = RANGE_SPECS[range] || RANGE_SPECS['This Month'];
-  const { start, end } = rangeWindow(range, now);
+  const spec = specFor(range);
+  const { start, end } = spec.window(now);
   const windowStart = start.getTime();
   const windowEnd = end ? end.getTime() : now.getTime();
   const span = Math.max(windowEnd - windowStart, 1);
