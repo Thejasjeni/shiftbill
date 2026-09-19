@@ -104,7 +104,7 @@ export default function SearchableProductSelect({ products, value, onChange, isL
             {error ? (
               <p className="px-3 py-3 text-xs text-rose-600">Failed to load products: {error}</p>
             ) : isLoading ? (
-              <p className="px-3 py-3 text-xs text-slate-400">Loading products from Supabase...</p>
+              <p className="px-3 py-3 text-xs text-slate-400">Loading products from Firebase...</p>
             ) : filtered.length === 0 ? (
               <p className="px-3 py-3 text-xs text-slate-400 flex items-center gap-2">
                 <PackageSearch className="w-4 h-4" />

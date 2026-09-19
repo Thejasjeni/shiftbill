@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { Building2, Phone, Loader2, Save, RefreshCw, AlertTriangle, CheckCircle2, UserCog } from 'lucide-react';
 import { useVendors } from '../../hooks/useVendors';
-import { isSupabaseConfigured } from '../../lib/supabaseClient';
-import { queueVendor } from '../../database/offlineSync';
+import { useDashboard } from '../../context/DashboardContext';
 
 // ---------------------------------------------------------------------------
 // VendorForm — persistent vendor/client form (Name, GST No, Phone).
-// Submissions insert into Supabase `vendors`; the list re-fetches on mount,
-// so data persists across page refreshes.
+// Submissions insert into the Firestore `vendors` collection; the list is a
+// live view, so data persists across page refreshes.
 // ---------------------------------------------------------------------------
 
 const TYPE_OPTIONS = [
@@ -19,6 +18,7 @@ const GST_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/;
 
 export default function VendorForm() {
   const { vendors, isLoading, error, isSaving, addVendor, refetch } = useVendors();
+  const { isFirebaseConfigured } = useDashboard();
 
   const [name, setName] = useState('');
   const [gstNo, setGstNo] = useState('');
@@ -48,26 +48,19 @@ export default function VendorForm() {
 
     const vendor = { name: name.trim(), gst_no: gstNo.trim(), phone: phone.trim(), type };
 
-    // Offline: queue for upload when connectivity returns instead of failing
-    if (!navigator.onLine || !isSupabaseConfigured) {
-      queueVendor(vendor);
-      setSuccessMsg(`${vendor.name} saved on this device — will upload automatically when back online`);
-      setName(''); setGstNo(''); setPhone('');
-      setTimeout(() => setSuccessMsg(null), 5000);
-      return;
-    }
-
+    // Works offline too: Firestore holds the row in its cache and uploads it
+    // when a connection returns, so there is no separate queue to feed.
     try {
       await addVendor(vendor);
-      setSuccessMsg(`${vendor.name} saved to Supabase`);
+      setSuccessMsg(
+        navigator.onLine
+          ? `${vendor.name} saved to Firebase`
+          : `${vendor.name} saved on this device — will upload automatically when back online`
+      );
       setName(''); setGstNo(''); setPhone('');
       setTimeout(() => setSuccessMsg(null), 4000);
-    } catch {
-      // Server rejected but we're online: queue it so nothing is lost
-      queueVendor(vendor);
-      setSuccessMsg(`${vendor.name} saved on this device — will upload automatically when back online`);
-      setName(''); setGstNo(''); setPhone('');
-      setTimeout(() => setSuccessMsg(null), 5000);
+    } catch (err) {
+      setFieldErrors({ form: `Could not save ${vendor.name}: ${err.message}` });
     }
   };
 
@@ -80,7 +73,7 @@ export default function VendorForm() {
             Vendor / Client Registry
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Saved to Supabase — persists across refreshes
+            Saved to Firebase — persists across refreshes
           </p>
         </div>
         <button
@@ -94,10 +87,10 @@ export default function VendorForm() {
         </button>
       </div>
 
-      {!isSupabaseConfigured && (
+      {!isFirebaseConfigured && (
         <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>Supabase is not configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable saving.</span>
+          <span>Firebase is not configured — set the VITE_FIREBASE_* values to enable saving.</span>
         </div>
       )}
 
@@ -190,7 +183,7 @@ export default function VendorForm() {
 
         <button
           type="submit"
-          disabled={isSaving || !isSupabaseConfigured}
+          disabled={isSaving || !isFirebaseConfigured}
           className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-60 text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
         >
           {isSaving ? (
@@ -207,7 +200,7 @@ export default function VendorForm() {
           Saved Vendors ({vendors.length})
         </h3>
         {isLoading ? (
-          <p className="text-xs text-slate-400 py-3 text-center">Loading from Supabase...</p>
+          <p className="text-xs text-slate-400 py-3 text-center">Loading from Firebase...</p>
         ) : vendors.length === 0 ? (
           <p className="text-xs text-slate-400 py-3 text-center">No vendors saved yet</p>
         ) : (

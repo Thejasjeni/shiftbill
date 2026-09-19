@@ -8,7 +8,6 @@ export default function TopAppBar() {
     setIsSearchOpen,
     setIsCheckoutOpen,
     businessInfo,
-    isSupabaseConfigured,
     lastSynced,
     isOnline,
     pendingSyncCount,

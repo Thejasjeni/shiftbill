@@ -3,7 +3,7 @@ import { X, Receipt, IndianRupee, User, Loader2 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 
 export default function NewSaleModal() {
-  const { isAddSaleOpen, setIsAddSaleOpen, addSale, isSupabaseConfigured } = useDashboard();
+  const { isAddSaleOpen, setIsAddSaleOpen, addSale, isFirebaseConfigured } = useDashboard();
 
   const [partyName, setPartyName] = useState('');
   const [amount, setAmount] = useState('');
@@ -51,7 +51,7 @@ export default function NewSaleModal() {
             <div className="text-left">
               <h3 className="font-bold text-base leading-tight">Add Sale Transaction</h3>
               <p className="text-[11px] text-slate-300">
-                {isSupabaseConfigured ? 'Syncs directly to Supabase' : 'Stores in local session'}
+                {isFirebaseConfigured ? 'Syncs directly to Firebase' : 'Stores in local session'}
               </p>
             </div>
           </div>

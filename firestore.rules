@@ -1,0 +1,42 @@
+rules_version = '2';
+
+// ============================================================================
+// SwiftBill — Firestore access rules
+//
+// SINGLE-USER / QUICK START. The app talks to Firestore straight from the
+// browser with no sign-in, so these rules mirror the policy the app had on
+// Supabase (anon role = full access). That means anyone who has the project id
+// and the (public) web API key can read and write this data.
+//
+// Before this app is used by more than one business or made public, replace
+// these with authenticated rules — e.g. scope every collection to its owner:
+//
+//   match /transactions/{doc} {
+//     allow read, write: if request.auth != null
+//                        && request.auth.uid == resource.data.ownerId;
+//   }
+//
+// Deploy with:  firebase deploy --only firestore:rules
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /transactions/{doc} {
+      allow read, write: if true;
+    }
+
+    match /inventory/{doc} {
+      allow read, write: if true;
+    }
+
+    match /vendors/{doc} {
+      allow read, write: if true;
+    }
+
+    // Everything else stays closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -3,11 +3,10 @@ import { X, ShoppingCart, IndianRupee, Building, Loader2, Package } from 'lucide
 import { useDashboard } from '../../context/DashboardContext';
 import { useProducts } from '../../hooks/useProducts';
 import SearchableProductSelect from '../ui/SearchableProductSelect';
-import { supabase } from '../../lib/supabaseClient';
-import { queueStockDelta } from '../../database/offlineSync';
+import { incrementStock } from '../../lib/firestoreApi';
 
 export default function NewPurchaseModal() {
-  const { isAddPurchaseOpen, setIsAddPurchaseOpen, addPurchase, isSupabaseConfigured } = useDashboard();
+  const { isAddPurchaseOpen, setIsAddPurchaseOpen, addPurchase, isFirebaseConfigured } = useDashboard();
   const { products, isLoading: isLoadingProducts, error: productsError } = useProducts();
 
   const [supplierName, setSupplierName] = useState('');
@@ -43,23 +42,13 @@ export default function NewPurchaseModal() {
         type: 'purchase'
       });
 
-      // Stock-in: atomically bump inventory server-side via RPC when online;
-      // queue the delta for replay on the next sync when offline
-      // (client-computed totals would race with concurrent edits)
-      if (product && isSupabaseConfigured && supabase) {
-        if (navigator.onLine) {
-          const { error: stockErr } = await supabase.rpc('increment_inventory_stock', {
-            p_id: product.id,
-            p_delta: qtyNum
-          });
-          if (stockErr) {
-            queueStockDelta(product.id, qtyNum); // retry on next sync
-            console.warn('Stock update failed, queued for retry:', stockErr.message);
-          }
-        } else {
-          // Offline: the purchase tx is already saved locally — queue the
-          // stock bump so it replays when connectivity returns
-          queueStockDelta(product.id, qtyNum);
+      // Stock-in: `increment` is applied server-side, so concurrent edits
+      // can't overwrite each other, and it queues offline like any other write
+      if (product && isFirebaseConfigured) {
+        try {
+          await incrementStock(product.id, qtyNum);
+        } catch (err) {
+          console.warn('Stock update failed, will sync when reachable:', err.message);
         }
       }
 
@@ -88,7 +77,7 @@ export default function NewPurchaseModal() {
             <div className="text-left">
               <h3 className="font-bold text-base leading-tight">Add Purchase Transaction</h3>
               <p className="text-[11px] text-slate-300">
-                {isSupabaseConfigured ? 'Syncs to Supabase · pick a product to auto-add stock' : 'Stores in local session'}
+                {isFirebaseConfigured ? 'Syncs to Firebase · pick a product to auto-add stock' : 'Stores in local session'}
               </p>
             </div>
           </div>

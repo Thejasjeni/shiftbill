@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchVendors, insertVendor } from '../lib/vendorsApi';
+import { subscribeVendors, insertVendor, refreshFromServer } from '../lib/firestoreApi';
 
 // ---------------------------------------------------------------------------
-// useVendors — loads vendors from Supabase on mount and keeps the list fresh.
-// Persistence across refreshes comes free: every mount re-fetches, so what
-// shows in the UI is whatever is in the database.
+// useVendors — live list of clients/suppliers, backed by Firestore.
+// Persistence across refreshes comes free: each mount resubscribes, so the
+// list always shows what the database holds (or its local cache).
 // ---------------------------------------------------------------------------
 
 export function useVendors() {
@@ -13,36 +13,27 @@ export function useVendors() {
   const [error, setError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const rows = await fetchVendors();
-      setVendors(rows);
-    } catch (err) {
-      setError(err.message || 'Failed to load vendors');
-    } finally {
-      setIsLoading(false);
-    }
+  useEffect(() => {
+    return subscribeVendors(
+      (rows) => {
+        setVendors(rows);
+        setIsLoading(false);
+      },
+      (message) => setError(message || 'Failed to load vendors')
+    );
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  // Submit handler for the persistent form. Returns true on success.
-  // Pass the vendor object through untouched — insertVendor normalizes
-  // both gst_no (snake) and gstNo (camel) spellings.
+  // Submit handler for the persistent form. Works offline: the row lands in
+  // Firestore's cache immediately and uploads when a connection is available.
   const addVendor = useCallback(async (vendor) => {
     setIsSaving(true);
     try {
-      const row = await insertVendor(vendor);
-      setVendors(prev => [row, ...prev]);
+      await insertVendor(vendor);
       return true;
     } finally {
       setIsSaving(false);
     }
   }, []);
 
-  return { vendors, isLoading, error, isSaving, addVendor, refetch: load };
+  return { vendors, isLoading, error, isSaving, addVendor, refetch: refreshFromServer };
 }

@@ -38,8 +38,8 @@ const FALLBACK_INVENTORY = [
 ];
 
 export default function CheckoutBottomSheet({ isOpen, onClose }) {
-  const { currentData, addSale, isSupabaseConfigured, businessInfo = {} } = useDashboard();
-  // Saved customers from the Supabase vendor registry (offline-safe: empty list
+  const { currentData, addSale, isFirebaseConfigured, businessInfo = {} } = useDashboard();
+  // Saved customers from the Firestore vendor registry (offline-safe: empty list
   // when unreachable — local parties below still work)
   const { vendors } = useVendors();
 
@@ -248,7 +248,7 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
     }
   };
 
-  // Complete checkout & record sale in Supabase / offline DB
+  // Complete checkout & record sale in Firestore (queued locally when offline)
   const handleCheckout = async () => {
     if (cart.length === 0) {
       alert("Please add at least one item to checkout");
@@ -269,7 +269,7 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
       items_json: cart
     };
 
-    // Save to context and Supabase
+    // Save to the local cache and Firestore
     await addSale(invoice);
     // Snapshot the exact-amount QR for the receipt BEFORE resetting the
     // cart state (which clears the live preview QR)

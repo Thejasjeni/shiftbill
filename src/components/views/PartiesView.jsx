@@ -82,7 +82,7 @@ export default function PartiesView() {
         </div>
       </div>
 
-      {/* Supabase-backed Vendor/Client Registry (collapsible) */}
+      {/* Firestore-backed Vendor/Client Registry (collapsible) */}
       {isVendorRegistryOpen && (
         <VendorForm />
       )}
