@@ -77,7 +77,7 @@ export default function SettingsView() {
         <div className="pt-1 border-t border-slate-100">
           <h3 className="mt-3 text-xs font-bold text-slate-700 uppercase tracking-wider">Bill Totals</h3>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            Leave both at 0 and every bill is simply its cart total.
+            These configure the totals printed on every bill. Leave both at 0 and every bill is simply its cart total.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
             <div>
