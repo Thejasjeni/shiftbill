@@ -1,20 +1,20 @@
 rules_version = '2';
 
 // ============================================================================
-// SwiftBill — Firestore access rules
+// SwiftBill — Firestore access rules (LIVE)
 //
 // SINGLE-USER / QUICK START. The app talks to Firestore straight from the
 // browser with no sign-in, so these rules mirror the policy the app had on
-// Supabase (anon role = full access). That means anyone who has the project id
-// and the (public) web API key can read and write this data.
+// Supabase (anon role = full access). Anyone with the project id and the
+// (public) web API key can read and write this data.
 //
-// Before this app is used by more than one business or made public, replace
-// these with authenticated rules — e.g. scope every collection to its owner:
-//
-//   match /transactions/{doc} {
-//     allow read, write: if request.auth != null
-//                        && request.auth.uid == resource.data.ownerId;
-//   }
+// There is deliberately no catch-all `match /{document=**}`: Firestore already
+// denies every path no rule matches, so one would only be redundant. (An
+// earlier version of this file carried `allow read, write: if false` on a
+// wildcard; the Rules testing API shows it did NOT block these three
+// collections — matching rules are combined, and a grant wins — so removing it
+// was a clean-up, not a fix. See firestore.rules.owner-scoped for the target
+// state once sign-in is live.)
 //
 // Deploy with:  firebase deploy --only firestore:rules
 // ============================================================================
@@ -32,11 +32,6 @@ service cloud.firestore {
 
     match /vendors/{doc} {
       allow read, write: if true;
-    }
-
-    // Everything else stays closed.
-    match /{document=**} {
-      allow read, write: if false;
     }
   }
 }

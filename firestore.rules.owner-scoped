@@ -1,0 +1,74 @@
+rules_version = '2';
+
+// ============================================================================
+// SwiftBill — Firestore rules, OWNER-SCOPED (staged, NOT released)
+//
+// This is the ruleset the app needs once Google sign-in is live: every
+// document carries an `ownerId`, and only the signed-in owner can read or
+// write it. It is staged in this file rather than released, because releasing
+// it before anyone can sign in would lock every existing document away.
+//
+// Verified with the Firebase Rules testing API — which can simulate incoming
+// writes and auth, but NOT an existing stored document:
+//
+//   create with the caller's own uid ................. allowed
+//   create with no ownerId ........................... denied
+//   create stamped with someone else's uid ........... denied
+//   anonymous create / read / update / delete ......... denied  (all three collections)
+//
+// NOT yet exercised: the read and legacy-claim branches, which depend on the
+// stored document's ownerId. Those must be proven against the live database
+// with a signed-in user before this file is released.
+//
+// To go live: rename over firestore.rules (or point firebase.json at it), make
+// every write stamp ownerId and every query filter on it, then
+// `firebase deploy --only firestore:rules`. Until the app does both, this
+// ruleset would deny the app its own data.
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // The stored document belongs to the caller.
+    function owned() {
+      return signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // First write by the owner: the document carries their uid.
+    function stampedByCaller() {
+      return signedIn() && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    // Adopting a legacy document that predates ownership (ownerId is absent).
+    function claimingLegacyDoc() {
+      return signedIn()
+        && resource.data.ownerId == null
+        && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    match /transactions/{doc} {
+      allow read: if owned() || claimingLegacyDoc() || (signedIn() && resource.data.ownerId == null);
+      allow create: if stampedByCaller();
+      allow update: if owned() || claimingLegacyDoc();
+      allow delete: if owned();
+    }
+
+    match /inventory/{doc} {
+      allow read: if owned() || claimingLegacyDoc() || (signedIn() && resource.data.ownerId == null);
+      allow create: if stampedByCaller();
+      allow update: if owned() || claimingLegacyDoc();
+      allow delete: if owned();
+    }
+
+    match /vendors/{doc} {
+      allow read: if owned() || claimingLegacyDoc() || (signedIn() && resource.data.ownerId == null);
+      allow create: if stampedByCaller();
+      allow update: if owned() || claimingLegacyDoc();
+      allow delete: if owned();
+    }
+  }
+}

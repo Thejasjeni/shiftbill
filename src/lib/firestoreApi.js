@@ -73,6 +73,10 @@ function subscribeCollection(name, onData, { orderField, direction = 'desc', onE
 
   return onSnapshot(
     target,
+    // Metadata changes matter here: a locally queued write turning into an
+    // acknowledged one changes nothing about the document, so without this the
+    // listener never re-fires and the "waiting to sync" badge sticks.
+    { includeMetadataChanges: true },
     (snap) => {
       publish(snap);
       onError?.(null);
