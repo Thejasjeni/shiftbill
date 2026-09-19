@@ -57,8 +57,10 @@ export function buildScale(buckets) {
 export function buildGeometry(buckets, size, scale) {
   const plotWidth = Math.max(10, size.width - PLOT_PADDING.left - PLOT_PADDING.right);
   const plotHeight = Math.max(10, size.height - PLOT_PADDING.top - PLOT_PADDING.bottom);
-  // The timeline always produces at least 6 buckets, so a span of 1 is safe
-  const xFor = (index) => PLOT_PADDING.left + (index / (buckets.length - 1)) * plotWidth;
+  // A one-day-old week is a single bucket, which has no span to divide by: centre it
+  const xFor = (index) => (buckets.length === 1
+    ? PLOT_PADDING.left + plotWidth / 2
+    : PLOT_PADDING.left + (index / (buckets.length - 1)) * plotWidth);
   const yFor = (value) => PLOT_PADDING.top + ((scale.max - value) / (scale.max - scale.min)) * plotHeight;
 
   return {

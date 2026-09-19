@@ -1,57 +1,77 @@
-// Range windows and per-bucket sales/expense/profit math for the dashboard chart.
+// Range registry and per-bucket sales/expense/profit math for the dashboard chart.
 // Deliberately a plain module: the provider owns React state, this owns the numbers.
 
 const DATE_LABEL = { day: 'numeric', month: 'short' };
+
 const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 const startOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1);
-const daysBefore = (date, days) => startOfDay(new Date(date.getFullYear(), date.getMonth(), date.getDate() - days));
+// Monday-based week, so "This Week" is a real calendar week
+const startOfWeek = (date) => startOfDay(new Date(date.getFullYear(), date.getMonth(), date.getDate() - ((date.getDay() + 6) % 7)));
+const startOfQuarter = (date) => new Date(date.getFullYear(), Math.floor(date.getMonth() / 3) * 3, 1);
 
-// Each range is defined once: its window, its bucket count and its label format.
-// Bucket counts are fixed, so a range is always drawable and its boundaries stay
-// stable across renders (at least 6 buckets everywhere). A closed window (Last
-// Month) keeps its neighbouring months out; open windows run up to `now`, where a
-// timestamp a little ahead of this device's clock (server clock skew) still
-// belongs to the newest bucket rather than silently vanishing.
+// Even buckets across the window
+const evenBuckets = (count) => (start, end) => Array.from({ length: count }, (_, i) => start + ((end - start) * i) / count);
+
+// One bucket per local day, so a part-finished week still means one bar per day
+function dayBuckets(start, end) {
+  const edges = [];
+  for (let day = new Date(start); day.getTime() < end; day.setDate(day.getDate() + 1)) {
+    edges.push(day.getTime());
+  }
+  return edges.length ? edges : [start];
+}
+
+// The registry is the single owner of which ranges exist, what each covers, how it
+// is bucketed and how it is labelled. Windows are local-time: "This Week" is the
+// current Monday-Sunday week and "This Quarter" the current calendar quarter, both
+// read up to `now`; "Last Month" is a closed window that keeps this month's rows
+// out. A timestamp a little ahead of this device's clock (server clock skew) still
+// lands in the newest bucket rather than vanishing.
 const RANGE_SPECS = {
   Today: {
-    bucketCount: 6,
     labelFormat: { hour: 'numeric' },
-    window: (now) => ({ start: startOfDay(now), end: null })
+    window: (now) => ({ start: startOfDay(now), end: null }),
+    buckets: evenBuckets(6)
   },
   'This Week': {
-    bucketCount: 7,
     labelFormat: DATE_LABEL,
-    window: (now) => ({ start: daysBefore(now, 6), end: null })
+    window: (now) => ({ start: startOfWeek(now), end: null }),
+    buckets: dayBuckets
   },
   'This Month': {
-    bucketCount: 10,
     labelFormat: DATE_LABEL,
-    window: (now) => ({ start: startOfMonth(now), end: null })
+    window: (now) => ({ start: startOfMonth(now), end: null }),
+    buckets: evenBuckets(10)
   },
   'Last Month': {
-    bucketCount: 6,
     labelFormat: DATE_LABEL,
-    window: (now) => ({ start: new Date(now.getFullYear(), now.getMonth() - 1, 1), end: startOfMonth(now) })
+    window: (now) => ({ start: new Date(now.getFullYear(), now.getMonth() - 1, 1), end: startOfMonth(now) }),
+    buckets: evenBuckets(6)
   },
   'This Quarter': {
-    bucketCount: 10,
     labelFormat: DATE_LABEL,
-    window: (now) => ({ start: daysBefore(now, 89), end: null })
+    window: (now) => ({ start: startOfQuarter(now), end: null }),
+    buckets: evenBuckets(10)
   }
 };
 
-const specFor = (range) => RANGE_SPECS[range] || RANGE_SPECS['This Month'];
+// The dropdown options and the provider's starting range both come from here, so
+// the range list cannot drift out of step with the registry.
+export const RANGE_LABELS = Object.keys(RANGE_SPECS);
+export const DEFAULT_RANGE = 'This Month';
 
 // Sales, expenses and profit per bucket for one range.
 export function buildSalesTimeline(transactions, range, now = new Date()) {
-  const spec = specFor(range);
+  const spec = RANGE_SPECS[range];
+  if (!spec) throw new Error(`Unknown chart range: ${range}`);
+
   const { start, end } = spec.window(now);
   const windowStart = start.getTime();
   const windowEnd = end ? end.getTime() : now.getTime();
-  const span = Math.max(windowEnd - windowStart, 1);
-
-  const buckets = Array.from({ length: spec.bucketCount }, (_, i) => ({
-    start: windowStart + (span * i) / spec.bucketCount,
+  const edges = spec.buckets(windowStart, windowEnd);
+  const buckets = edges.map((edge, i) => ({
+    start: edge,
+    end: i + 1 < edges.length ? edges[i + 1] : Math.max(windowEnd, edge + 1),
     amount: 0,
     expense: 0,
     count: 0
@@ -62,11 +82,16 @@ export function buildSalesTimeline(transactions, range, now = new Date()) {
     const time = new Date(tx.created_at || tx.date).getTime();
     if (isNaN(time) || time < windowStart) return;
     if (end && time >= windowEnd) return;
-    // Bucket starts are fractional ms, so every timestamp (integer ms, as Date
-    // stores them) falls in exactly one bucket; the clamp keeps a skewed
-    // timestamp a little ahead of `now` in the newest bucket.
-    const rawIndex = Math.floor(((time - windowStart) / span) * spec.bucketCount);
-    const index = Math.min(spec.bucketCount - 1, Math.max(0, rawIndex));
+    // Buckets are not all the same width (This Week is one bucket per day), so the
+    // bucket is the first one whose span still contains the timestamp; a skewed
+    // timestamp ahead of `now` clamps into the newest bucket.
+    let index = buckets.length - 1;
+    for (let i = 0; i < buckets.length; i += 1) {
+      if (time < buckets[i].end) {
+        index = i;
+        break;
+      }
+    }
     const amount = Number(tx.amount) || 0;
     if (tx.type === 'sale') {
       buckets[index].amount += amount;

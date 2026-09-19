@@ -9,14 +9,13 @@ import {
   selectLabelPoints,
   smoothPath
 } from '../../utils/chartMath';
+import { RANGE_LABELS } from '../../utils/salesTimeline';
 
 const SERIES = [
   { key: 'amount', label: 'Sales', color: '#4F46E5' },
   { key: 'expense', label: 'Expense', color: '#F43F5E' },
   { key: 'profit', label: 'Profit', color: '#059669' }
 ];
-
-const FILTER_OPTIONS = ['Today', 'This Week', 'This Month', 'Last Month', 'This Quarter'];
 
 const EMPTY_SIZE = { width: 560, height: 200 };
 // Stable fallbacks so downstream memo dependencies never change identity
@@ -156,7 +155,7 @@ export default function SalesChartSection() {
 
           {isDropdownOpen && (
             <div className="absolute right-0 mt-1 w-36 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-20 text-xs">
-              {FILTER_OPTIONS.map((option) => (
+              {RANGE_LABELS.map((option) => (
                 <button
                   key={option}
                   onClick={() => {
@@ -188,7 +187,7 @@ export default function SalesChartSection() {
 
       {/* Chart */}
       <div className="mt-2 relative">
-        {activePoint && (
+        {activePoint && hasData && (
           <div
             className="absolute z-20 top-1 px-3 py-2 rounded-xl bg-[#1E1B4B] text-white shadow-lg pointer-events-none -translate-x-1/2"
             style={{ left: tooltipX }}

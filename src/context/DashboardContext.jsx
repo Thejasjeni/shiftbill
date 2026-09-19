@@ -20,7 +20,7 @@ import {
   beginRemoteInsert,
   endRemoteInsert
 } from '../database/offlineSync';
-import { buildSalesTimeline, summarizeTimeline } from '../utils/salesTimeline';
+import { buildSalesTimeline, summarizeTimeline, DEFAULT_RANGE } from '../utils/salesTimeline';
 
 const DashboardContext = createContext();
 
@@ -35,7 +35,7 @@ const DEFAULT_BUSINESS_INFO = {
 
 export function DashboardProvider({ children }) {
   // Time range filter for sales chart
-  const [salesTimeRange, setSalesTimeRange] = useState('This Month');
+  const [salesTimeRange, setSalesTimeRange] = useState(DEFAULT_RANGE);
 
   // Drawer and modal states
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
