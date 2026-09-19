@@ -36,7 +36,6 @@ export function DashboardProvider({ children }) {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false); // Slide-up Checkout Bottom Sheet
   const [isAddPurchaseOpen, setIsAddPurchaseOpen] = useState(false);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
-  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [activeReportModal, setActiveReportModal] = useState(null);
   const [activeNavTab, setActiveNavTab] = useState('home');
 
@@ -291,8 +290,6 @@ export function DashboardProvider({ children }) {
     setIsAddPurchaseOpen,
     isAddExpenseOpen,
     setIsAddExpenseOpen,
-    isUpgradeModalOpen,
-    setIsUpgradeModalOpen,
     activeReportModal,
     setActiveReportModal,
     activeNavTab,

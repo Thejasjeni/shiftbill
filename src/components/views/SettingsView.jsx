@@ -3,7 +3,7 @@ import { Building2 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 
 export default function SettingsView() {
-  const { businessInfo, setBusinessInfo, setIsUpgradeModalOpen } = useDashboard();
+  const { businessInfo, setBusinessInfo } = useDashboard();
 
   return (
     <div className="space-y-4 max-w-3xl text-left">

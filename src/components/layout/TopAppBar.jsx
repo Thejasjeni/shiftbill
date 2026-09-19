@@ -69,9 +69,11 @@ export default function TopAppBar() {
                 : 'bg-rose-500/15 border-rose-500/30 text-rose-300 hover:bg-rose-500/25'
             }`}
             title={
-              isOnline
-                ? `Online (Local-First Synced)${lastSynced ? ` • Last: ${lastSynced}` : ''}`
-                : 'Offline Mode (Bills stored locally in IndexedDB, auto-syncs when online)'
+              pendingSyncCount > 0
+                ? `${pendingSyncCount} bill${pendingSyncCount === 1 ? '' : 's'} waiting to upload`
+                : isOnline
+                  ? 'All bills saved to the cloud'
+                  : 'Bills are saved on this device and upload automatically when you are back online'
             }
           >
             {isOnline ? (

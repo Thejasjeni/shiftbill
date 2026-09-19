@@ -35,7 +35,6 @@ export default function Sidebar() {
     setIsMobileDrawerOpen,
     activeNavTab,
     setActiveNavTab,
-    setIsUpgradeModalOpen,
     businessInfo,
     currentData
   } = useDashboard();

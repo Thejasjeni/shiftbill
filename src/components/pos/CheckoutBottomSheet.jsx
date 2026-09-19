@@ -355,7 +355,7 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
                 {isCompleted ? 'Invoice Generated' : 'Mobile POS Checkout'}
               </h2>
               <span className="text-[11px] text-slate-500">
-                {isCompleted ? completedInvoice?.id : 'Dual Pricing • Camera Barcode • UPI'}
+                {isCompleted ? completedInvoice?.id : 'Tap items, take payment, save the bill'}
               </span>
             </div>
           </div>

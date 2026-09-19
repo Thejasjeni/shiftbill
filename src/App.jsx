@@ -7,12 +7,10 @@ import FinancialSummaryCards from './components/dashboard/FinancialSummaryCards'
 import SalesChartSection from './components/dashboard/SalesChartSection';
 import QuickReportsGrid from './components/dashboard/QuickReportsGrid';
 import RecentTransactionsList from './components/dashboard/RecentTransactionsList';
-import FloatingActionButton from './components/dashboard/FloatingActionButton';
 import NewSaleModal from './components/modals/NewSaleModal';
 import NewPurchaseModal from './components/modals/NewPurchaseModal';
 import NewExpenseModal from './components/modals/NewExpenseModal';
 import ReportViewerModal from './components/modals/ReportViewerModal';
-import PremiumUpgradeModal from './components/modals/PremiumUpgradeModal';
 import SearchDrawer from './components/modals/SearchDrawer';
 import CheckoutBottomSheet from './components/pos/CheckoutBottomSheet';
 import PartiesView from './components/views/PartiesView';
@@ -121,9 +119,6 @@ function DashboardContent() {
           {renderActiveView()}
         </main>
 
-        {/* Floating Action Button (FAB) */}
-        <FloatingActionButton />
-
         {/* Persistent 4-Action Bottom Navigation Bar for Mobile */}
         <BottomNav />
 
@@ -132,7 +127,6 @@ function DashboardContent() {
         <NewPurchaseModal />
         <NewExpenseModal />
         <ReportViewerModal />
-        <PremiumUpgradeModal />
         <SearchDrawer />
         <CheckoutBottomSheet
           isOpen={isCheckoutOpen}

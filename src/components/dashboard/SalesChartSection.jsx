@@ -422,7 +422,7 @@ export default function SalesChartSection() {
           </div>
           <div className="text-[11px] text-slate-400 flex items-center gap-1">
             <Info className="w-3 h-3" />
-            <span>Real-time local tracking</span>
+            <span>From your saved bills</span>
           </div>
         </div>
       </div>

@@ -60,7 +60,7 @@ export default function FinancialSummaryCards() {
                   : 'No overdue receivables'}
               </span>
             </div>
-            <span className="text-[11px] text-emerald-600 font-medium">Safe flow</span>
+            <span className="text-[11px] text-emerald-600 font-medium">Money coming in</span>
           </div>
 
           {/* Decorative accent bar */}
@@ -110,7 +110,7 @@ export default function FinancialSummaryCards() {
                   : 'No upcoming payables'}
               </span>
             </div>
-            <span className="text-[11px] text-purple-600 font-medium">Safe flow</span>
+            <span className="text-[11px] text-purple-600 font-medium">Money going out</span>
           </div>
 
           {/* Decorative accent bar */}
