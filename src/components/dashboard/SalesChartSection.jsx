@@ -1,6 +1,14 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Calendar, ChevronDown, TrendingUp, Info } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
+import {
+  PLOT_PADDING,
+  buildGeometry,
+  buildScale,
+  compactINR,
+  selectLabelPoints,
+  smoothPath
+} from '../../utils/chartMath';
 
 const SERIES = [
   { key: 'amount', label: 'Sales', color: '#4F46E5' },
@@ -10,43 +18,10 @@ const SERIES = [
 
 const FILTER_OPTIONS = ['Today', 'This Week', 'This Month', 'Last Month', 'This Quarter'];
 
-// Inner padding of the plot area (left keeps room for the axis labels)
-const PAD = { top: 16, right: 12, bottom: 4, left: 50 };
 const EMPTY_SIZE = { width: 560, height: 200 };
 // Stable fallbacks so downstream memo dependencies never change identity
 const EMPTY_BUCKETS = [];
 const EMPTY_TOTALS = { sales: 0, expense: 0, profit: 0, invoices: 0 };
-
-// Axis labels have to stay legible: ₹250 / ₹1.2k / ₹1.2L / ₹1.2Cr
-function compactINR(value) {
-  const amount = Number(value) || 0;
-  const abs = Math.abs(amount);
-  const sign = amount < 0 ? '-' : '';
-  const round = (n) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10);
-  if (abs >= 10000000) return `${sign}₹${round(abs / 10000000)}Cr`;
-  if (abs >= 100000) return `${sign}₹${round(abs / 100000)}L`;
-  if (abs >= 1000) return `${sign}₹${round(abs / 1000)}k`;
-  return `${sign}₹${Math.round(abs)}`;
-}
-
-// Snap a raw interval up to a human number (1 / 2 / 2.5 / 5 / 10 × 10ⁿ)
-function niceInterval(raw) {
-  if (!(raw > 0)) return 1;
-  const base = 10 ** Math.floor(Math.log10(raw));
-  const scaled = raw / base;
-  const factor = scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 2.5 ? 2.5 : scaled <= 5 ? 5 : 10;
-  return factor * base;
-}
-
-// Smooth cubic path through one series' points
-function smoothPath(points, key) {
-  return points.reduce((path, point, index) => {
-    if (index === 0) return `M ${point.x} ${point[key]}`;
-    const previous = points[index - 1];
-    const midX = previous.x + (point.x - previous.x) / 2;
-    return `${path} C ${midX} ${previous[key]}, ${midX} ${point[key]}, ${point.x} ${point[key]}`;
-  }, '');
-}
 
 export default function SalesChartSection() {
   const { currentData, salesTimeRange, setSalesTimeRange } = useDashboard();
@@ -107,73 +82,14 @@ export default function SalesChartSection() {
     maximumFractionDigits: 0
   }).format(value || 0);
 
-  // Axis: an interval snapped to a human number, expanded until it covers the
-  // data, dipping below zero whenever a bucket's profit is negative.
-  const scale = useMemo(() => {
-    const values = buckets.flatMap(bucket => [bucket.amount, bucket.expense, bucket.profit]);
-    const dataMax = Math.max(0, ...values);
-    const dataMin = Math.min(0, ...values);
+  const scale = useMemo(() => buildScale(buckets), [buckets]);
 
-    let tickCount = 4;
-    let interval = niceInterval((dataMax - dataMin) / tickCount) || 1;
-    let min = dataMin < 0 ? -Math.ceil(-dataMin / interval) * interval : 0;
-    let max = min + interval * tickCount;
+  const geometry = useMemo(() => buildGeometry(buckets, size, scale), [buckets, size, scale]);
 
-    let guard = 0;
-    while ((max < dataMax || min > dataMin) && guard < 8) {
-      tickCount += 1;
-      interval = niceInterval((dataMax - dataMin) / tickCount) || interval;
-      min = dataMin < 0 ? -Math.ceil(-dataMin / interval) * interval : 0;
-      max = min + interval * tickCount;
-      guard += 1;
-    }
-
-    return {
-      min,
-      max,
-      interval,
-      ticks: Array.from({ length: tickCount + 1 }, (_, i) => min + interval * i)
-    };
-  }, [buckets]);
-
-  const geometry = useMemo(() => {
-    const plotWidth = Math.max(10, size.width - PAD.left - PAD.right);
-    const plotHeight = Math.max(10, size.height - PAD.top - PAD.bottom);
-    // The context always produces at least 6 buckets, so a span of 1 is safe
-    const xFor = (index) => PAD.left + (index / (buckets.length - 1)) * plotWidth;
-    const yFor = (value) => PAD.top + ((scale.max - value) / (scale.max - scale.min)) * plotHeight;
-
-    return {
-      width: size.width,
-      height: size.height,
-      plotWidth,
-      plotHeight,
-      yFor,
-      baseline: yFor(0),
-      barWidth: Math.min(26, Math.max(4, (plotWidth / Math.max(buckets.length, 1)) * 0.45)),
-      points: buckets.map((bucket, index) => ({
-        ...bucket,
-        index,
-        x: xFor(index),
-        ySales: yFor(bucket.amount),
-        yExpense: yFor(bucket.expense),
-        yProfit: yFor(bucket.profit)
-      }))
-    };
-  }, [buckets, size, scale]);
-
-  // Only as many date labels as fit under the plot, aligned to real x positions
-  const labelPoints = useMemo(() => {
-    const maxLabels = Math.max(2, Math.floor(geometry.plotWidth / 62));
-    const stride = Math.max(1, Math.ceil(buckets.length / maxLabels));
-    const indices = [];
-    for (let i = 0; i < buckets.length; i += stride) indices.push(i);
-    const last = buckets.length - 1;
-    if (last > 0 && indices[indices.length - 1] !== last && last - indices[indices.length - 1] >= stride / 2) {
-      indices.push(last);
-    }
-    return indices.map(i => geometry.points[i]).filter(Boolean);
-  }, [geometry, buckets.length]);
+  const labelPoints = useMemo(
+    () => selectLabelPoints(geometry.points, geometry.plotWidth),
+    [geometry]
+  );
 
   const activePoint = activeIndex === null ? null : geometry.points[activeIndex];
   const salesPath = smoothPath(geometry.points, 'ySales');
@@ -317,9 +233,9 @@ export default function SalesChartSection() {
             {/* Empty state: a bare baseline instead of meaningless tick values */}
             {!hasData && (
               <line
-                x1={PAD.left}
+                x1={PLOT_PADDING.left}
                 y1={geometry.yFor(0)}
-                x2={geometry.width - PAD.right}
+                x2={geometry.width - PLOT_PADDING.right}
                 y2={geometry.yFor(0)}
                 stroke="#E2E8F0"
                 strokeWidth="1"
@@ -333,16 +249,16 @@ export default function SalesChartSection() {
               return (
                 <g key={tick}>
                   <line
-                    x1={PAD.left}
+                    x1={PLOT_PADDING.left}
                     y1={y}
-                    x2={geometry.width - PAD.right}
+                    x2={geometry.width - PLOT_PADDING.right}
                     y2={y}
                     stroke={isZero && scale.min < 0 ? '#CBD5E1' : '#F1F5F9'}
                     strokeWidth="1"
                     strokeDasharray={isZero && scale.min < 0 ? undefined : '4 4'}
                   />
                   <text
-                    x={PAD.left - 8}
+                    x={PLOT_PADDING.left - 8}
                     y={y + 3}
                     textAnchor="end"
                     fontSize="9"
@@ -402,9 +318,9 @@ export default function SalesChartSection() {
             {activePoint && (
               <line
                 x1={activePoint.x}
-                y1={PAD.top}
+                y1={PLOT_PADDING.top}
                 x2={activePoint.x}
-                y2={geometry.height - PAD.bottom}
+                y2={geometry.height - PLOT_PADDING.bottom}
                 stroke="#CBD5E1"
                 strokeWidth="1"
                 strokeDasharray="3 3"
@@ -438,8 +354,8 @@ export default function SalesChartSection() {
 
             {/* Single hit target across the plot, snapping to the nearest bucket */}
             <rect
-              x={PAD.left}
-              y={PAD.top}
+              x={PLOT_PADDING.left}
+              y={PLOT_PADDING.top}
               width={geometry.plotWidth}
               height={geometry.plotHeight}
               fill="transparent"
