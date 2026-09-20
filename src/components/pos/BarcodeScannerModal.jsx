@@ -77,13 +77,21 @@ export default function BarcodeScannerModal({ isOpen, onClose, onScanSuccess }) 
     return () => {
       clearTimeout(timer);
       isMounted = false;
-      if (html5QrCodeRef.current) {
-        html5QrCodeRef.current
-          .stop()
-          .then(() => html5QrCodeRef.current?.clear())
-          .catch(() => {});
-      }
+      const scanner = html5QrCodeRef.current;
       html5QrCodeRef.current = null;
+      // `stop()` throws SYNCHRONOUSLY when the camera never started — denied
+      // permission, no camera, or closed before `start()` resolved. A rejected
+      // promise is handled by `.catch`, but a sync throw here would escape an
+      // unmount cleanup and take the whole app down with it, so it is caught.
+      if (scanner) {
+        try {
+          Promise.resolve(scanner.stop())
+            .then(() => scanner.clear())
+            .catch(() => {});
+        } catch {
+          /* never reached SCANNING — nothing to release */
+        }
+      }
     };
   }, [isOpen]);
 

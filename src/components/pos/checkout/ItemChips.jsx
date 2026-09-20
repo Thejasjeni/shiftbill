@@ -5,7 +5,7 @@ import { stockState, stockOf } from '../../../utils/stock';
 
 // The catalogue as one tap per item. Out-of-stock items stay tappable — a stale
 // count must never stop a sale — but they say so first, and the parent warns.
-export default function ItemChips({ items, tier, onAdd, onScan }) {
+export default function ItemChips({ items, isCatalogueLoaded, tier, onAdd, onScan }) {
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
@@ -21,6 +21,10 @@ export default function ItemChips({ items, tier, onAdd, onScan }) {
           <span>Scan barcode</span>
         </button>
       </div>
+
+      {!isCatalogueLoaded && (
+        <p className="py-2 text-micro text-ink-subtle">Loading your catalog…</p>
+      )}
 
       <div className="flex gap-2 overflow-x-auto pb-1">
         {items.map((item) => {

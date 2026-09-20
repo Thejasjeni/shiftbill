@@ -26,6 +26,9 @@ import MoneyBlock from './checkout/MoneyBlock';
 
 // Demo inventory used until the merchant adds real items (stable identity,
 // defined at module scope so it doesn't break memoization below).
+// Stable identities: the cart memo depends on this list, so neither case may
+// hand it a fresh array on every render.
+const NO_ITEMS = [];
 const FALLBACK_INVENTORY = [
   { id: '1', item_name: 'Basmati Rice Premium 5kg', retail_price: 550, wholesale_price: 470, barcode: '8901234567890', stock: 45 },
   { id: '2', item_name: 'Cold Pressed Coconut Oil 1L', retail_price: 320, wholesale_price: 260, barcode: '8909876543210', stock: 80 },
@@ -33,7 +36,7 @@ const FALLBACK_INVENTORY = [
 ];
 
 export default function CheckoutBottomSheet({ isOpen, onClose }) {
-  const { currentData, addSale, businessInfo = {} } = useDashboard();
+  const { currentData, addSale, businessInfo = {}, isCatalogueLoaded } = useDashboard();
   // Saved customers from the Firestore vendor registry (offline-safe: empty list
   // when unreachable — local parties below still work)
   const { vendors } = useVendors();
@@ -52,9 +55,15 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
   const [receiptQrUrl, setReceiptQrUrl] = useState(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfError, setPdfError] = useState(null);
-  // Available inventory list from context or offline cache
-  // (fallback is a stable module-level constant so its identity never changes)
-  const inventoryItems = currentData.items.length > 0 ? currentData.items : FALLBACK_INVENTORY;
+  // A scanned code that matched nothing while the catalog was still unknown.
+  const [unmatchedScan, setUnmatchedScan] = useState(null);
+  // What this shop sells. Until the catalog has answered once, that is unknown
+  // — and unknown is not the same as empty: the demo list may stand in for a
+  // shop that has genuinely saved nothing yet, never for a catalog that has not
+  // arrived, or a quick tap could bill a product nobody sells.
+  const inventoryItems = currentData.items.length > 0
+    ? currentData.items
+    : (isCatalogueLoaded ? FALLBACK_INVENTORY : NO_ITEMS);
 
   // Auto-apply dual pricing: rates are derived at render from the item's
   // OWN stored prices (not the previous rate), so switching tiers is
@@ -167,16 +176,25 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
 
     if (found) {
       addItemToCart(found);
-    } else {
-      // Create ad-hoc item with scanned code
-      addItemToCart({
-        id: `scanned-${Date.now()}`,
-        item_name: `Scanned Item (${scannedCode.slice(-6)})`,
-        retail_price: 150,
-        wholesale_price: 120,
-        barcode: scannedCode
-      });
+      return;
     }
+
+    // A miss only means "not catalogued" once the catalog has answered. Before
+    // that it means "not known yet", and the ad-hoc line below would put an
+    // invented product on a real bill at an invented price.
+    if (!isCatalogueLoaded) {
+      setUnmatchedScan(scannedCode);
+      return;
+    }
+
+    // Create ad-hoc item with scanned code
+    addItemToCart({
+      id: `scanned-${Date.now()}`,
+      item_name: `Scanned Item (${scannedCode.slice(-6)})`,
+      retail_price: 150,
+      wholesale_price: 120,
+      barcode: scannedCode
+    });
   };
 
   // Complete checkout & record sale in Firestore (queued locally when offline)
@@ -378,6 +396,7 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
 
               <ItemChips
                 items={inventoryItems}
+                isCatalogueLoaded={isCatalogueLoaded}
                 tier={pricingTier}
                 onAdd={addItemToCart}
                 onScan={() => setIsScannerOpen(true)}
@@ -420,6 +439,19 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
                     {outOfStock.map((line) => line.name).join(', ')}{' '}
                     {outOfStock.length === 1 ? 'is' : 'are'} out of stock — restock it in
                     Items, or bill it anyway if the count is stale.
+                  </span>
+                </p>
+              )}
+
+              {unmatchedScan && !isCatalogueLoaded && (
+                <p
+                  role="status"
+                  className="flex items-start gap-2 rounded-[var(--radius-control)] bg-[var(--color-warn)]/10 px-3 py-2 text-micro text-[var(--color-warn)] ring-1 ring-[var(--color-warn)]/25"
+                >
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Nothing called “{unmatchedScan}” has loaded yet — the catalog is still
+                    arriving. Scan it again in a moment, or add it in Items first.
                   </span>
                 </p>
               )}

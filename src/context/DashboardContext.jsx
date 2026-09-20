@@ -46,6 +46,12 @@ export function DashboardProvider({ children }) {
   const [transactions, setTransactions] = useState([]);
   const [items, setItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Is the catalog known? `isLoading` tracks the ledger, so it cannot answer
+  // this, and neither can an empty `items` array: that means either "this shop
+  // has saved no items" or "the answer has not arrived yet" — on a fresh device
+  // the local cache answers instantly and emptily, so only the backend's own
+  // answer (or having no backend at all) settles the question.
+  const [isCatalogueLoaded, setIsCatalogueLoaded] = useState(false);
   const [lastSynced, setLastSynced] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
@@ -99,10 +105,11 @@ export function DashboardProvider({ children }) {
       if (!fromCache) setLastSynced(new Date().toLocaleTimeString());
     });
 
-    const unsubInventory = subscribeInventory((rows, pending) => {
+    const unsubInventory = subscribeInventory((rows, pending, fromCache) => {
       pendingItems = pending;
       publishPending();
       setItems(rows.map(normalizeItemForUI));
+      if (!fromCache || !isFirebaseConfigured) setIsCatalogueLoaded(true);
     });
 
     // Connectivity is the browser's view; Firestore reconnects and replays its
@@ -316,6 +323,7 @@ export function DashboardProvider({ children }) {
     // Offline-first & Firebase connection states
     isFirebaseConfigured,
     isLoading,
+    isCatalogueLoaded,
     lastSynced,
     isOnline,
     pendingSyncCount,
