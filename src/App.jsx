@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 import { DashboardProvider, useDashboard } from './context/DashboardContext';
 import TopAppBar from './components/layout/TopAppBar';
 import Sidebar from './components/layout/Sidebar';
-import BottomNav from './components/layout/BottomNav';
+import GlassNav from './components/layout/GlassNav';
 import FinancialSummaryCards from './components/dashboard/FinancialSummaryCards';
 import SalesChartSection from './components/dashboard/SalesChartSection';
 import QuickReportsGrid from './components/dashboard/QuickReportsGrid';
@@ -65,65 +65,43 @@ class ErrorBoundary extends Component {
   }
 }
 
+function ActiveView({ tab }) {
+  switch (tab) {
+    case 'parties':  return <PartiesView />;
+    case 'items':    return <ItemsView />;
+    case 'settings': return <SettingsView />;
+    case 'reports':  return (
+      <div className="space-y-4">
+        <QuickReportsGrid />
+        <RecentTransactionsList />
+      </div>
+    );
+    case 'home':
+    case 'sale':
+    case 'purchase':
+    default:         return (
+      <div className="space-y-4 sm:space-y-5">
+        <FinancialSummaryCards />
+        <SalesChartSection />
+        <QuickReportsGrid />
+        <RecentTransactionsList />
+      </div>
+    );
+  }
+}
+
 function DashboardContent() {
   const { activeNavTab, isCheckoutOpen, setIsCheckoutOpen } = useDashboard();
 
-  const renderActiveView = () => {
-    switch (activeNavTab) {
-      case 'parties':
-        return <PartiesView />;
-      case 'items':
-        return <ItemsView />;
-      case 'settings':
-        return <SettingsView />;
-      case 'reports':
-        return (
-          <div className="space-y-4">
-            <QuickReportsGrid />
-            <RecentTransactionsList />
-          </div>
-        );
-      case 'home':
-      case 'sale':
-      case 'purchase':
-      default:
-        return (
-          <div className="space-y-4 sm:space-y-5">
-            {/* 1. Financial Summary Cards (Receivables & Payables) */}
-            <FinancialSummaryCards />
-
-            {/* 2. Sales Chart Section (Total Sale: ₹0, Line Chart 1 Sep to 28 Sep) */}
-            <SalesChartSection />
-
-            {/* 3. Quick Links / Most Used Reports Grid */}
-            <QuickReportsGrid />
-
-            {/* 4. Recent Transactions List */}
-            <RecentTransactionsList />
-          </div>
-        );
-    }
-  };
-
   return (
     <div className="flex h-screen w-full overflow-hidden bg-canvas">
-      {/* Desktop Navigation Sidebar / Collapsible Mobile Drawer */}
       <Sidebar />
-
-      {/* Main Content Viewport */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        {/* Sticky Top App Bar */}
         <TopAppBar />
-
-        {/* Scrollable Dashboard Body */}
         <main className="mx-auto w-full max-w-7xl flex-1 overflow-y-auto p-3.5 pb-28 sm:p-6 lg:pb-12">
-          {renderActiveView()}
+          <ActiveView tab={activeNavTab} />
         </main>
-
-        {/* Persistent 4-Action Bottom Navigation Bar for Mobile */}
-        <BottomNav />
-
-        {/* Modals & Overlays */}
+        <GlassNav />
         <NewSaleModal />
         <NewPurchaseModal />
         <NewExpenseModal />

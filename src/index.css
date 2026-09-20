@@ -162,6 +162,165 @@
   }
 }
 
+/* Glass-morphic floating tab bar — hand-rolled liquid-glass pill.
+   Tuned entirely from this file:
+   - Blur intensity: blur(22px) in .glass-nav-pill — raise for thicker glass.
+   - Glass tint: the white stop in .glass-nav-pill's background.
+   - Top light-reflection: the radial-gradient in .glass-nav-pill::after.
+   - Hairline: the inset ring in .glass-nav-pill::before.
+   - Drop shadow: the drop-shadow on .glass-nav-bar.
+   - Squircle: radius 32px.
+   - Colours: every tab sets --tab-accent (the app's money semantics — brand,
+     in-green, out-purple, warn-amber), so icons, the active label and the
+     pod's glow all follow one variable per tab.
+   - Active pod: .glass-nav-pod. GlassNav.jsx measures the active tab and sets
+     left/width in px; the transition's overshoot curve is the spring.
+   - Reduce motion: the pod still moves, on a plain ease-out, no overshoot.
+   ============================================================================ */
+.glass-nav-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  display: none;
+  justify-content: center;
+  pointer-events: none;
+  padding: 0 12px;
+  filter: drop-shadow(0 10px 20px rgb(16 24 40 / 0.15));
+}
+@media (max-width: 1023px) {
+  .glass-nav-bar {
+    display: flex;
+  }
+}
+
+.glass-nav-pill {
+  pointer-events: auto;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: 32px;
+  padding: 4px;
+  background: rgb(255 255 255 / 0.55);
+  backdrop-filter: blur(22px) saturate(1.25);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  touch-action: manipulation;
+}
+
+/* Hairline + top light reflection, one pseudo-element each. */
+.glass-nav-pill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.25),
+    inset 0 1px 0 rgb(255 255 255 / 0.7);
+  pointer-events: none;
+}
+.glass-nav-pill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(120% 60% at 50% 0%, rgb(255 255 255 / 0.5) 0%, transparent 55%);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* The pod: a white pill behind the active tab that springs between tabs.
+   left/width arrive from the component's measurement; the glow takes the
+   active tab's own accent via --pod-accent. */
+.glass-nav-pod {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.9),
+    0 0 14px var(--pod-accent, var(--color-brand));
+  transition:
+    left 350ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    width 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 0;
+}
+
+.glass-nav-tab {
+  all: unset;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 10px;
+  min-width: 56px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+.glass-nav-tab:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-brand);
+  border-radius: 12px;
+}
+
+.glass-nav-tab:active .glass-nav-icon {
+  transform: scale(0.92);
+}
+
+.glass-nav-icon {
+  width: 22px;
+  height: 22px;
+  color: var(--tab-accent, var(--color-brand));
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.glass-nav-label {
+  font: 600 11px/1.1 var(--font-sans);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: var(--color-ink-muted);
+  transition: color 250ms ease;
+}
+
+.glass-nav-tab[aria-current='page'] .glass-nav-label {
+  color: var(--tab-accent, var(--color-brand));
+  font-weight: 700;
+}
+
+/* OLED: the white tint goes dark so the glass reads on true black. */
+[data-theme='oled'] .glass-nav-pill {
+  background: rgb(22 22 26 / 0.6);
+}
+[data-theme='oled'] .glass-nav-pill::before {
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.12),
+    inset 0 1px 0 rgb(255 255 255 / 0.16);
+}
+[data-theme='oled'] .glass-nav-pill::after {
+  background: radial-gradient(120% 60% at 50% 0%, rgb(255 255 255 / 0.12) 0%, transparent 55%);
+  opacity: 1;
+}
+[data-theme='oled'] .glass-nav-pod {
+  background: rgb(38 38 46 / 0.92);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.14),
+    0 0 14px var(--pod-accent, var(--color-brand));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-nav-pod {
+    transition: left 200ms ease-out, width 200ms ease-out;
+  }
+  .glass-nav-icon {
+    transition: none;
+  }
+}
+
 /* Custom scrollbar for mobile drawers & clean table views */
 ::-webkit-scrollbar {
   width: 5px;
@@ -291,4 +450,3 @@
     border-radius: 0 !important;
   }
 }
-
