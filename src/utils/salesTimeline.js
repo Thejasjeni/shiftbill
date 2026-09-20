@@ -126,3 +126,36 @@ export function summarizeTimeline(timeline) {
     invoices: totals.invoices + bucket.count
   }), { sales: 0, expense: 0, profit: 0, invoices: 0 });
 }
+
+// The same range one period earlier, for "up 12% vs last period" pills.
+//
+// Deliberately NOT built by re-running buildSalesTimeline: the current ranges are
+// open-ended ("to date"), and that function's clock-skew rule clamps anything
+// after the window into the newest bucket — so a previous window computed that
+// way silently absorbs the current period and every comparison reads as 0%.
+// This totals a closed [previousStart, currentStart) window instead. Both edges
+// come from the registry, so a range's definition still has one owner.
+export function previousRangeTotals(transactions, range, now = new Date()) {
+  const spec = RANGE_SPECS[range];
+  if (!spec) throw new Error(`Unknown chart range: ${range}`);
+
+  const windowEnd = spec.window(now).start.getTime();
+  const previousStart = spec.window(new Date(windowEnd - 1)).start.getTime();
+
+  const totals = transactions.reduce((acc, tx) => {
+    if (tx.type !== 'sale' && tx.type !== 'expense') return acc;
+    const time = new Date(tx.created_at || tx.date).getTime();
+    if (isNaN(time) || time < previousStart || time >= windowEnd) return acc;
+    const amount = Number(tx.amount) || 0;
+    if (tx.type === 'sale') {
+      acc.sales += amount;
+      acc.invoices += 1;
+    } else {
+      acc.expense += amount;
+    }
+    return acc;
+  }, { sales: 0, expense: 0, profit: 0, invoices: 0 });
+
+  totals.profit = totals.sales - totals.expense;
+  return totals;
+}

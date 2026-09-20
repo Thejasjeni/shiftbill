@@ -11,7 +11,9 @@ import {
   claimUnownedDocuments
 } from '../lib/firestoreApi';
 import { useAuthUser, signInWithGoogle, signOutOwner } from '../lib/auth';
-import { buildSalesTimeline, summarizeTimeline, DEFAULT_RANGE } from '../utils/salesTimeline';
+import {
+  buildSalesTimeline, summarizeTimeline, previousRangeTotals, DEFAULT_RANGE
+} from '../utils/salesTimeline';
 import { countLowStock } from '../utils/stock';
 import { DEFAULT_BUSINESS_INFO } from '../data/businessProfile';
 
@@ -151,6 +153,13 @@ export function DashboardProvider({ children }) {
 
   const salesRangeTotals = useMemo(() => summarizeTimeline(salesTimeline), [salesTimeline]);
 
+  // The same range one period earlier, so the summary can show a real trend
+  // instead of a number with nothing to compare it to.
+  const previousRange = useMemo(
+    () => previousRangeTotals(transactions, salesTimeRange),
+    [transactions, salesTimeRange]
+  );
+
   // Computed state combining user entries and Firestore records
   const currentData = useMemo(() => {
     return {
@@ -161,12 +170,13 @@ export function DashboardProvider({ children }) {
       stockValue: items.reduce((sum, itm) => sum + (Number(itm.retail_price || itm.price || 0) * Number(itm.stock_quantity || itm.stock || 0)), 0),
       salesTimeline,
       salesRangeTotals,
+      previousRange,
       transactions,
       parties,
       items,
       lowStockCount: countLowStock(items)
     };
-  }, [totalReceivable, totalPayable, transactions, parties, items, salesTimeline, salesRangeTotals]);
+  }, [totalReceivable, totalPayable, transactions, parties, items, salesTimeline, salesRangeTotals, previousRange]);
 
   // `addTransaction` returns as soon as the record is committed to the local
   // cache (Firestore resolves its own promise only once the backend acks, which

@@ -10,6 +10,10 @@ import {
   smoothPath
 } from '../../utils/chartMath';
 import { RANGE_LABELS } from '../../utils/salesTimeline';
+import { formatINR } from '../../utils/money';
+import Money from '../ui/Money';
+import Surface from '../ui/Surface';
+import TrendPill from '../ui/TrendPill';
 
 const SERIES = [
   { key: 'amount', label: 'Sales', color: '#4F46E5' },
@@ -21,6 +25,9 @@ const EMPTY_SIZE = { width: 560, height: 200 };
 // Stable fallbacks so downstream memo dependencies never change identity
 const EMPTY_BUCKETS = [];
 const EMPTY_TOTALS = { sales: 0, expense: 0, profit: 0, invoices: 0 };
+// Money colours are reserved; the chart's series use the same three, so the
+// legend, the lines and the summary read as one system.
+const MONEY = { sales: 'in', expense: 'out', profit: 'auto' };
 
 export default function SalesChartSection() {
   const { currentData, salesTimeRange, setSalesTimeRange } = useDashboard();
@@ -32,6 +39,7 @@ export default function SalesChartSection() {
 
   const buckets = currentData.salesTimeline || EMPTY_BUCKETS;
   const totals = currentData.salesRangeTotals || EMPTY_TOTALS;
+  const previous = currentData.previousRange || EMPTY_TOTALS;
   const hasData = buckets.some(bucket => bucket.amount > 0 || bucket.expense > 0);
 
   // Close the range dropdown on outside click / Escape
@@ -74,12 +82,6 @@ export default function SalesChartSection() {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-
-  const formatCurrency = (value) => new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0
-  }).format(value || 0);
 
   const scale = useMemo(() => buildScale(buckets), [buckets]);
 
@@ -126,17 +128,15 @@ export default function SalesChartSection() {
     : 0;
 
   return (
-    <section className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs transition-all">
+    <Surface padding="lg">
       {/* Header: the range's own sales total, so it matches the plotted window */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+      <div className="flex flex-col justify-between gap-3 border-b border-hairline/60 pb-3 sm:flex-row sm:items-center">
         <div>
-          <h2 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
-            <span>{salesTimeRange} Sales:</span>
-            <span className="text-indigo-600 font-extrabold text-base sm:text-lg">
-              {formatCurrency(totals.sales)}
-            </span>
+          <h2 className="flex items-center gap-1.5 text-title font-bold tracking-tight text-ink">
+            <span>{salesTimeRange} sales:</span>
+            <Money value={totals.sales} tone="in" className="text-title font-extrabold" />
           </h2>
-          <p className="text-[11px] text-slate-500 mt-0.5 text-left">
+          <p className="mt-0.5 text-left text-micro text-ink-muted">
             Timeline: {salesTimeRange}
           </p>
         </div>
@@ -146,15 +146,15 @@ export default function SalesChartSection() {
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
             aria-haspopup="listbox"
             aria-expanded={isDropdownOpen}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 rounded-[var(--radius-control)] bg-surface-2 px-3 py-1.5 text-micro font-semibold text-ink ring-1 ring-hairline/70 transition-colors hover:bg-surface-3 cursor-pointer"
           >
-            <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+            <Calendar className="h-3.5 w-3.5 text-[var(--color-brand)]" />
             <span>{salesTimeRange}</span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            <ChevronDown className="h-3.5 w-3.5 text-ink-subtle" />
           </button>
 
           {isDropdownOpen && (
-            <div className="absolute right-0 mt-1 w-36 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-20 text-xs">
+            <div className="absolute right-0 z-20 mt-1 w-36 rounded-[var(--radius-card)] bg-surface py-1 text-body shadow-e3 ring-1 ring-hairline/70">
               {RANGE_LABELS.map((option) => (
                 <button
                   key={option}
@@ -163,8 +163,10 @@ export default function SalesChartSection() {
                     setIsDropdownOpen(false);
                     setActiveIndex(null);
                   }}
-                  className={`w-full text-left px-3 py-2 hover:bg-indigo-50 hover:text-indigo-600 transition-colors ${
-                    salesTimeRange === option ? 'font-bold text-indigo-600 bg-indigo-50/50' : 'text-slate-700'
+                  className={`w-full px-3 py-2 text-left transition-colors hover:bg-surface-2 hover:text-[var(--color-brand)] cursor-pointer ${
+                    salesTimeRange === option
+                      ? 'bg-[var(--color-brand)]/8 font-bold text-[var(--color-brand)]'
+                      : 'text-ink-muted'
                   }`}
                 >
                   {option}
@@ -178,8 +180,8 @@ export default function SalesChartSection() {
       {/* Legend */}
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
         {SERIES.map(series => (
-          <span key={series.key} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
-            <span className="w-3.5 h-1.5 rounded-full" style={{ backgroundColor: series.color }} />
+          <span key={series.key} className="flex items-center gap-1.5 text-micro font-semibold text-ink-muted">
+            <span className="h-1.5 w-3.5 rounded-full" style={{ backgroundColor: series.color }} />
             {series.label}
           </span>
         ))}
@@ -189,19 +191,19 @@ export default function SalesChartSection() {
       <div className="mt-2 relative">
         {activePoint && hasData && (
           <div
-            className="absolute z-20 top-1 px-3 py-2 rounded-xl bg-[#1E1B4B] text-white shadow-lg pointer-events-none -translate-x-1/2"
+            className="pointer-events-none absolute top-1 z-20 -translate-x-1/2 rounded-[var(--radius-control)] bg-[var(--color-brand-deep)] px-3 py-2 text-white shadow-e3"
             style={{ left: tooltipX }}
           >
-            <p className="text-[10px] font-semibold text-slate-300 whitespace-nowrap">{activePoint.fullDate}</p>
+            <p className="whitespace-nowrap text-micro font-semibold text-white/70">{activePoint.fullDate}</p>
             <div className="mt-1 space-y-0.5">
               {SERIES.map(series => (
-                <div key={series.key} className="flex items-center justify-between gap-4 text-[11px] whitespace-nowrap">
-                  <span className="flex items-center gap-1.5 text-slate-300">
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: series.color }} />
+                <div key={series.key} className="flex items-center justify-between gap-4 whitespace-nowrap text-micro">
+                  <span className="flex items-center gap-1.5 text-white/70">
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: series.color }} />
                     {series.label}
                   </span>
-                  <span className={`font-bold ${series.key === 'profit' && activePoint.profit < 0 ? 'text-rose-300' : 'text-white'}`}>
-                    {formatCurrency(activePoint[series.key])}
+                  <span className={`num font-bold ${series.key === 'profit' && activePoint.profit < 0 ? 'text-[var(--color-danger-bright)]' : 'text-white'}`}>
+                    {formatINR(activePoint[series.key])}
                   </span>
                 </div>
               ))}
@@ -215,8 +217,8 @@ export default function SalesChartSection() {
           role="img"
           onKeyDown={handleKeyDown}
           onBlur={() => setActiveIndex(null)}
-          aria-label={`${salesTimeRange}: sales ${formatCurrency(totals.sales)}, expenses ${formatCurrency(totals.expense)}, net profit ${formatCurrency(totals.profit)}`}
-          className="relative w-full h-48 sm:h-56 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-indigo-200"
+          aria-label={`${salesTimeRange}: sales ${formatINR(totals.sales)}, expenses ${formatINR(totals.expense)}, net profit ${formatINR(totals.profit)}`}
+          className="relative h-48 w-full rounded-[var(--radius-control)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/40 sm:h-56"
         >
           <svg
             viewBox={`0 0 ${geometry.width} ${geometry.height}`}
@@ -366,9 +368,9 @@ export default function SalesChartSection() {
           </svg>
 
           {!hasData && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
-              <p className="text-xs font-semibold text-slate-500">No sales or expenses in this period</p>
-              <p className="text-[11px] text-slate-400 mt-0.5">Pick another range or record a sale to see the chart</p>
+            <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+              <p className="text-body font-semibold text-ink-muted">No sales or expenses in this period</p>
+              <p className="mt-0.5 text-micro text-ink-subtle">Pick another range, or record a sale to see the chart</p>
             </div>
           )}
         </div>
@@ -380,8 +382,8 @@ export default function SalesChartSection() {
             return (
               <span
                 key={point.key}
-                className={`absolute -translate-x-1/2 text-[10px] font-medium transition-colors ${
-                  isActive ? 'text-indigo-600 font-bold' : 'text-slate-400'
+                className={`num absolute -translate-x-1/2 text-micro font-medium transition-colors ${
+                  isActive ? 'font-bold text-[var(--color-brand)]' : 'text-ink-subtle'
                 }`}
                 style={{ left: point.x }}
               >
@@ -392,40 +394,43 @@ export default function SalesChartSection() {
         </div>
       </div>
 
-      {/* Summary strip for the same window */}
-      <div className="mt-3 pt-3 border-t border-slate-100">
+      {/* Summary for the same window. Each figure carries its change against
+          the equivalent previous period — or no pill at all when there is no
+          earlier data to compare with, rather than a fabricated 0%. */}
+      <div className="mt-3 border-t border-hairline/60 pt-3">
         <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-xl bg-slate-50 px-2.5 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Sales</p>
-            <p className="text-xs sm:text-sm font-bold text-slate-900">{formatCurrency(totals.sales)}</p>
+          <div className="rounded-[var(--radius-control)] bg-surface-2 px-2.5 py-2">
+            <p className="text-micro font-semibold uppercase tracking-wide text-ink-subtle">Sales</p>
+            <Money value={totals.sales} tone={MONEY.sales} className="text-body font-bold" />
+            <TrendPill current={totals.sales} previous={previous.sales} label={`the previous ${salesTimeRange.toLowerCase()}`} />
           </div>
-          <div className="rounded-xl bg-rose-50/70 px-2.5 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-400">Expenses</p>
-            <p className="text-xs sm:text-sm font-bold text-rose-600">{formatCurrency(totals.expense)}</p>
+          <div className="rounded-[var(--radius-control)] bg-[var(--color-out)]/8 px-2.5 py-2">
+            <p className="text-micro font-semibold uppercase tracking-wide text-[var(--color-out)]">Expenses</p>
+            <Money value={totals.expense} tone="out" className="text-body font-bold" />
+            <TrendPill current={totals.expense} previous={previous.expense} label={`the previous ${salesTimeRange.toLowerCase()}`} />
           </div>
-          <div className={`rounded-xl px-2.5 py-2 ${totals.profit < 0 ? 'bg-rose-50/70' : 'bg-emerald-50/70'}`}>
-            <p className={`text-[10px] font-semibold uppercase tracking-wide ${totals.profit < 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
+          <div className={`rounded-[var(--radius-control)] px-2.5 py-2 ${totals.profit < 0 ? 'bg-[var(--color-danger)]/8' : 'bg-[var(--color-in)]/8'}`}>
+            <p className={`text-micro font-semibold uppercase tracking-wide ${totals.profit < 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-in)]'}`}>
               Net profit
             </p>
-            <p className={`text-xs sm:text-sm font-bold ${totals.profit < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
-              {formatCurrency(totals.profit)}
-            </p>
+            <Money value={totals.profit} tone={MONEY.profit} className="text-body font-bold" />
+            <TrendPill current={totals.profit} previous={previous.profit} label={`the previous ${salesTimeRange.toLowerCase()}`} />
           </div>
         </div>
 
-        <div className="mt-2.5 flex items-center justify-between text-xs text-slate-500">
-          <div className="flex items-center gap-1.5 text-[11px]">
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-            <span className="font-semibold text-slate-700">
-              {totals.invoices} invoice(s) in {salesTimeRange.toLowerCase()}
+        <div className="mt-2.5 flex items-center justify-between text-micro text-ink-muted">
+          <span className="flex items-center gap-1.5">
+            <TrendingUp className="h-3.5 w-3.5 text-[var(--color-in)]" />
+            <span className="font-semibold text-ink">
+              {totals.invoices} {totals.invoices === 1 ? 'bill' : 'bills'} in {salesTimeRange.toLowerCase()}
             </span>
-          </div>
-          <div className="text-[11px] text-slate-400 flex items-center gap-1">
-            <Info className="w-3 h-3" />
-            <span>From your saved bills</span>
-          </div>
+          </span>
+          <span className="flex items-center gap-1 text-ink-subtle">
+            <Info className="h-3 w-3" />
+            From your saved bills
+          </span>
         </div>
       </div>
-    </section>
+    </Surface>
   );
 }

@@ -56,7 +56,7 @@ export default function AccountButton() {
             ? `Signed in as ${user.email || user.uid} — click to sign out`
             : 'Sign in with Google to attach this ledger to your account'
         }
-        className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-2 text-slate-200 hover:text-white hover:bg-white/10 active:bg-white/20 rounded-full sm:rounded-xl transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+        className="flex items-center gap-1.5 rounded-full p-2 text-white/75 transition-colors hover:bg-white/10 hover:text-white active:bg-white/20 disabled:cursor-wait disabled:opacity-60 cursor-pointer sm:rounded-[var(--radius-control)] sm:px-3 sm:py-2"
       >
         {signedIn ? <LogOut className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
         <span className="hidden sm:inline text-xs font-semibold">
@@ -67,17 +67,17 @@ export default function AccountButton() {
       {notice && (
         <div
           role="alert"
-          className="absolute right-0 top-full mt-2 z-50 w-64 sm:w-80 rounded-xl bg-white text-slate-600 text-[11px] leading-relaxed shadow-xl ring-1 ring-slate-200 p-3"
+          className="absolute right-0 top-full z-50 mt-2 w-64 rounded-[var(--radius-card)] bg-surface p-3 text-micro leading-relaxed text-ink-muted shadow-e3 ring-1 ring-hairline/70 sm:w-80"
         >
           <button
             onClick={() => setNotice(null)}
             aria-label="Dismiss"
-            className="absolute right-2 top-2 p-0.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+            className="absolute right-2 top-2 p-0.5 text-ink-subtle transition-colors hover:text-ink cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>
-          <p className="flex items-center gap-1.5 font-semibold text-slate-900 pr-5">
-            <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <p className="flex items-center gap-1.5 pr-5 font-semibold text-ink">
+            <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-[var(--color-warn)]" />
             Sign-in unavailable
           </p>
           <p className="mt-1">{notice}</p>

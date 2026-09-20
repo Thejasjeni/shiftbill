@@ -1,138 +1,104 @@
 import React from 'react';
-import { ArrowDown, ArrowUp, ChevronRight, Users, Building, Wallet, Landmark } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronRight, Users, Building, Package, Boxes } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
+import Surface from '../ui/Surface';
+import Money from '../ui/Money';
+import Badge from '../ui/Badge';
 
 export default function FinancialSummaryCards() {
   const { currentData, setActiveReportModal } = useDashboard();
 
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(val || 0);
-  };
+  const saleCount = currentData.transactions.filter((t) => t.type === 'sale').length;
+  const purchaseCount = currentData.transactions.filter((t) => t.type === 'purchase').length;
 
   return (
     <section className="w-full space-y-3">
-      {/* 2 Main Cards: Side-by-side on desktop, stacked on mobile */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-        {/* Total Receivable Card */}
-        <div
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+        {/* Money in */}
+        <Surface
+          interactive
           onClick={() => setActiveReportModal({ id: 'party-statement', title: 'Customer Receivables Ledger' })}
-          className="relative overflow-hidden bg-white border border-emerald-100 rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-all cursor-pointer group active:scale-[0.99]"
+          className="group relative overflow-hidden"
         >
-          {/* Top Row: Label & Arrow Icon */}
+          <span className="absolute inset-y-0 left-0 w-1 rounded-l-[var(--radius-card)] bg-[var(--color-in)]" aria-hidden="true" />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-xs sm:text-sm font-semibold text-slate-500 uppercase tracking-wider">
+              <span className="text-micro font-semibold uppercase tracking-wider text-ink-subtle">
                 Total Receivable
               </span>
-              <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/50">
-                To Collect
-              </span>
+              <Badge tone="in">To collect</Badge>
             </div>
-            
-            {/* Green Downward Arrow Icon */}
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-xs">
-              <ArrowDown className="w-5 h-5 stroke-[2.5]" />
-            </div>
+            <span className="grid h-9 w-9 place-items-center rounded-[var(--radius-control)] bg-[var(--color-in)]/10 text-[var(--color-in)] transition-colors group-hover:bg-[var(--color-in)] group-hover:text-white">
+              <ArrowDown className="h-4 w-4" strokeWidth={2.5} />
+            </span>
           </div>
 
-          {/* Amount Display */}
-          <div className="mt-3 flex items-baseline justify-between">
-            <div className="text-2xl sm:text-3xl font-extrabold text-emerald-600 tracking-tight">
-              {formatCurrency(currentData.totalReceivable)}
-            </div>
-            <div className="flex items-center text-xs font-medium text-emerald-700 group-hover:translate-x-0.5 transition-transform">
-              <span>View Parties</span>
-              <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
-            </div>
+          <div className="mt-3 flex items-baseline justify-between gap-2">
+            <Money value={currentData.totalReceivable} tone="in" className="text-display font-extrabold" />
+            <span className="flex items-center gap-0.5 text-micro font-medium text-[var(--color-in)] transition-transform group-hover:translate-x-0.5">
+              View parties
+              <ChevronRight className="h-3.5 w-3.5" />
+            </span>
           </div>
 
-          {/* Bottom Micro-indicator */}
-          <div className="mt-3 pt-3 border-t border-emerald-50 flex items-center justify-between text-xs text-slate-500">
-            <div className="flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-slate-400" />
-              <span>
-                {currentData.totalReceivable > 0
-                  ? `${currentData.transactions.filter(t => t.type === 'sale').length} sale transaction(s)`
-                  : 'No overdue receivables'}
-              </span>
-            </div>
-            <span className="text-[11px] text-emerald-600 font-medium">Money coming in</span>
+          <div className="mt-3 flex items-center gap-1.5 border-t border-hairline/60 pt-3 text-micro text-ink-muted">
+            <Users className="h-3.5 w-3.5 text-ink-subtle" />
+            <span>
+              {currentData.totalReceivable > 0 ? `${saleCount} ${saleCount === 1 ? 'bill' : 'bills'}` : 'Nothing overdue'}
+            </span>
           </div>
+        </Surface>
 
-          {/* Decorative accent bar */}
-          <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-emerald-500 rounded-l"></div>
-        </div>
-
-        {/* Total Payable Card */}
-        <div
+        {/* Money out */}
+        <Surface
+          interactive
           onClick={() => setActiveReportModal({ id: 'daybook-report', title: 'Supplier Payables Ledger' })}
-          className="relative overflow-hidden bg-white border border-purple-100 rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-all cursor-pointer group active:scale-[0.99]"
+          className="group relative overflow-hidden"
         >
-          {/* Top Row: Label & Arrow Icon */}
+          <span className="absolute inset-y-0 left-0 w-1 rounded-l-[var(--radius-card)] bg-[var(--color-out)]" aria-hidden="true" />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-xs sm:text-sm font-semibold text-slate-500 uppercase tracking-wider">
+              <span className="text-micro font-semibold uppercase tracking-wider text-ink-subtle">
                 Total Payable
               </span>
-              <span className="text-[11px] font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200/50">
-                To Pay
-              </span>
+              <Badge tone="out">To pay</Badge>
             </div>
-            
-            {/* Red / Light Purple Upward Arrow Icon */}
-            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition-all shadow-xs">
-              <ArrowUp className="w-5 h-5 stroke-[2.5]" />
-            </div>
+            <span className="grid h-9 w-9 place-items-center rounded-[var(--radius-control)] bg-[var(--color-out)]/10 text-[var(--color-out)] transition-colors group-hover:bg-[var(--color-out)] group-hover:text-white">
+              <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
+            </span>
           </div>
 
-          {/* Amount Display */}
-          <div className="mt-3 flex items-baseline justify-between">
-            <div className="text-2xl sm:text-3xl font-extrabold text-purple-700 tracking-tight">
-              {formatCurrency(currentData.totalPayable)}
-            </div>
-            <div className="flex items-center text-xs font-medium text-purple-700 group-hover:translate-x-0.5 transition-transform">
-              <span>View Bills</span>
-              <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
-            </div>
+          <div className="mt-3 flex items-baseline justify-between gap-2">
+            <Money value={currentData.totalPayable} tone="out" className="text-display font-extrabold" />
+            <span className="flex items-center gap-0.5 text-micro font-medium text-[var(--color-out)] transition-transform group-hover:translate-x-0.5">
+              View bills
+              <ChevronRight className="h-3.5 w-3.5" />
+            </span>
           </div>
 
-          {/* Bottom Micro-indicator */}
-          <div className="mt-3 pt-3 border-t border-purple-50 flex items-center justify-between text-xs text-slate-500">
-            <div className="flex items-center gap-1.5">
-              <Building className="w-3.5 h-3.5 text-slate-400" />
-              <span>
-                {currentData.totalPayable > 0
-                  ? `${currentData.transactions.filter(t => t.type === 'purchase').length} purchase transaction(s)`
-                  : 'No upcoming payables'}
-              </span>
-            </div>
-            <span className="text-[11px] text-purple-600 font-medium">Money going out</span>
+          <div className="mt-3 flex items-center gap-1.5 border-t border-hairline/60 pt-3 text-micro text-ink-muted">
+            <Building className="h-3.5 w-3.5 text-ink-subtle" />
+            <span>
+              {currentData.totalPayable > 0 ? `${purchaseCount} ${purchaseCount === 1 ? 'bill' : 'bills'}` : 'Nothing due'}
+            </span>
           </div>
-
-          {/* Decorative accent bar */}
-          <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-purple-600 rounded-l"></div>
-        </div>
+        </Surface>
       </div>
 
-      {/* Mini Cash / Bank Bar (Instant liquidity indicator in SwiftBill) */}
-      <div className="bg-white rounded-xl border border-slate-200/80 p-2.5 sm:p-3 flex items-center justify-between text-xs text-slate-600">
-        <div className="flex items-center gap-2 sm:gap-4 flex-1 divide-x divide-slate-100">
-          <div className="flex items-center gap-1.5 pr-3">
-            <Wallet className="w-3.5 h-3.5 text-amber-500" />
-            <span className="text-slate-500">Cash in Hand:</span>
-            <span className="font-semibold text-slate-800">{formatCurrency(currentData.cashInHand)}</span>
-          </div>
-          <div className="flex items-center gap-1.5 pl-3">
-            <Landmark className="w-3.5 h-3.5 text-indigo-500" />
-            <span className="text-slate-500">Bank Balance:</span>
-            <span className="font-semibold text-slate-800">{formatCurrency(currentData.bankBalance)}</span>
-          </div>
-        </div>
-      </div>
+      {/* Catalogue strip. Replaces a "Cash in Hand / Bank Balance" pair that
+          restated the receivable and a hard-coded ₹0 — two numbers a shopkeeper
+          would read as facts and neither of which was one. */}
+      <Surface padding="sm" elevation={1} className="flex flex-wrap items-center justify-between gap-3 text-micro text-ink-muted">
+        <span className="flex items-center gap-1.5">
+          <Package className="h-3.5 w-3.5 text-ink-subtle" />
+          {currentData.items.length} {currentData.items.length === 1 ? 'item' : 'items'} in the catalogue
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Boxes className="h-3.5 w-3.5 text-ink-subtle" />
+          Stock value
+          <Money value={currentData.stockValue} tone="muted" className="text-ink" />
+        </span>
+      </Surface>
     </section>
   );
 }

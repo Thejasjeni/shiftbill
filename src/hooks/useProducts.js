@@ -20,7 +20,9 @@ export function useProducts() {
         setProducts(rows.map(toProductShape));
         setIsLoading(false);
       },
-      (message) => setError(message || 'Failed to load products')
+      // Null means the read recovered; only a message is an error, so the
+      // picker never reports a failure while it is in fact showing the catalog.
+      (message) => setError(message || null)
     );
     // Re-subscribes on sign-in/out so the catalog matches who is signed in.
   }, [user?.uid]);

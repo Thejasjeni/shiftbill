@@ -2,6 +2,11 @@ import React, { useState } from 'react';
 import { Package, Plus, Search, X, PackagePlus, Pencil, Barcode as BarcodeIcon, Loader2 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 import { stockState, thresholdOf, DEFAULT_LOW_STOCK_THRESHOLD } from '../../utils/stock';
+import Badge from '../ui/Badge';
+import EmptyState from '../ui/EmptyState';
+import Money from '../ui/Money';
+import Surface from '../ui/Surface';
+import { DIALOG, FIELD, LABEL } from '../ui/controls';
 import BarcodeScannerModal from '../pos/BarcodeScannerModal';
 
 // Badge pair for one item's stock state, shared by the card and anywhere else
@@ -9,14 +14,19 @@ import BarcodeScannerModal from '../pos/BarcodeScannerModal';
 function StockBadge({ item }) {
   const state = stockState(item);
   if (state === 'ok') return null;
-  const styles = state === 'out'
-    ? 'bg-rose-100 text-rose-700 border-rose-200'
-    : 'bg-amber-100 text-amber-800 border-amber-200';
-  const label = state === 'out' ? 'Out of stock' : `Low stock · ≤ ${thresholdOf(item)} ${item.unit || 'Pcs'}`;
   return (
-    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${styles}`}>{label}</span>
+    <Badge tone={state === 'out' ? 'danger' : 'warn'}>
+      {state === 'out' ? 'Out of stock' : `Low stock · ≤ ${thresholdOf(item)} ${item.unit || 'Pcs'}`}
+    </Badge>
   );
 }
+
+// The stock line's tone carries the same warning the badge does.
+const STOCK_TONE = {
+  out: 'text-[var(--color-danger)]',
+  low: 'text-[var(--color-warn)]',
+  ok: 'text-ink-muted'
+};
 
 export default function ItemsView() {
   const { currentData, setIsCheckoutOpen, upsertItem } = useDashboard();
@@ -84,145 +94,168 @@ export default function ItemsView() {
   return (
     <div className="space-y-4 text-left">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+      <Surface className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-lg sm:text-xl font-bold text-slate-900">Items & Inventory</h1>
-          <p className="text-xs text-slate-500">Track stock levels, pricing, units, barcodes & item codes</p>
+          <h1 className="text-title font-bold text-ink">Items &amp; inventory</h1>
+          <p className="text-micro text-ink-muted">Stock levels, prices, units, barcodes and item codes</p>
         </div>
         <button
           onClick={openAddModal}
-          className="flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-xs cursor-pointer"
+          className="flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--color-brand)] px-4 py-2 text-body font-semibold text-white shadow-e1 transition-opacity hover:opacity-90 cursor-pointer"
         >
-          <Plus className="w-4 h-4" />
-          <span>Add Item</span>
+          <Plus className="h-4 w-4" />
+          <span>Add item</span>
         </button>
-      </div>
+      </Surface>
 
       {/* Search */}
       <div className="relative">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-ink-subtle" />
         <input
           type="text"
-          placeholder="Search items by name, SKU or barcode..."
+          placeholder="Search items by name, SKU or barcode…"
+          aria-label="Search items"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-9 pr-3 py-2 bg-white rounded-xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className={`${FIELD} pl-9`}
         />
       </div>
 
       {/* Items Grid */}
       {filtered.length === 0 ? (
-        <div className="py-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200/80">
-          <Package className="w-10 h-10 mx-auto text-slate-300 stroke-1" />
-          <p className="text-sm font-semibold text-slate-600 mt-2">No inventory items added yet</p>
-          <p className="text-xs text-slate-400 mt-0.5">Click "Add Item" above to add products, pricing, and stock</p>
-          <button
-            onClick={openAddModal}
-            className="mt-3 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-semibold cursor-pointer"
-          >
-            + Create First Item
-          </button>
-        </div>
+        <Surface padding="none">
+          <EmptyState
+            icon={Package}
+            title={currentData.items.length === 0 ? 'No items yet' : 'Nothing matches that search'}
+            hint={
+              currentData.items.length === 0
+                ? 'Add your first product to bill it in one tap and get warned before it runs out.'
+                : 'Try a different name, SKU or barcode.'
+            }
+            action={
+              currentData.items.length === 0 ? (
+                <button
+                  onClick={openAddModal}
+                  className="rounded-[var(--radius-control)] bg-[var(--color-brand)]/10 px-3 py-1.5 text-micro font-bold text-[var(--color-brand)] transition-colors hover:bg-[var(--color-brand)]/15 cursor-pointer"
+                >
+                  + Add first item
+                </button>
+              ) : null
+            }
+          />
+        </Surface>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-          {filtered.map(item => (
-            <div
-              key={item.id}
-              className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:border-indigo-200 transition-all flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-bold text-sm text-slate-900">{item.name}</h3>
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
-                    {item.code}
-                  </span>
-                </div>
-                <StockBadge item={item} />
-                <div className="mt-2 flex items-baseline gap-1">
-                  <span className="text-lg font-extrabold text-indigo-600">₹{item.price}</span>
-                  <span className="text-xs text-slate-400">/ {item.unit}</span>
-                </div>
-                {item.barcode && (
-                  <div className="mt-1.5 flex items-center gap-1 text-[10px] text-slate-400 font-mono">
-                    <BarcodeIcon className="w-3 h-3" />
-                    <span>{item.barcode}</span>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+          {filtered.map(item => {
+            const state = stockState(item);
+            return (
+              <Surface
+                key={item.id}
+                padding="md"
+                className="flex flex-col justify-between transition-shadow hover:shadow-e2 hover:ring-[var(--color-brand)]/30"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <h2 className="text-body font-bold text-ink">{item.name}</h2>
+                    {item.code && (
+                      <span className="num shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-micro font-bold text-ink-muted">
+                        {item.code}
+                      </span>
+                    )}
                   </div>
-                )}
-              </div>
+                  <div className="mt-1 empty:hidden">
+                    <StockBadge item={item} />
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-1">
+                    <Money value={item.price} className="text-title font-extrabold text-[var(--color-brand)]" />
+                    <span className="text-micro text-ink-subtle">/ {item.unit}</span>
+                  </div>
+                  {item.barcode && (
+                    <div className="num mt-1.5 flex items-center gap-1 text-micro text-ink-subtle">
+                      <BarcodeIcon className="h-3 w-3" />
+                      <span>{item.barcode}</span>
+                    </div>
+                  )}
+                </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                <div className={`text-xs ${stockState(item) === 'out' ? 'text-rose-600' : stockState(item) === 'low' ? 'text-amber-700' : 'text-slate-500'}`}>
-                  Stock: <strong className="text-slate-800">{item.stock} {item.unit}</strong>
+                <div className="mt-4 flex items-center justify-between border-t border-hairline/60 pt-3">
+                  <div className={`text-micro ${STOCK_TONE[state]}`}>
+                    Stock: <strong className="num text-ink">{item.stock} {item.unit}</strong>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setIsCheckoutOpen(true)}
+                      className="rounded-[var(--radius-control)] bg-[var(--color-in)]/10 px-2.5 py-1 text-micro font-bold text-[var(--color-in)] transition-colors hover:bg-[var(--color-in)]/15 cursor-pointer"
+                    >
+                      + Bill
+                    </button>
+                    <button
+                      onClick={() => openEditModal(item)}
+                      title="Edit item"
+                      aria-label={`Edit item ${item.name}`}
+                      className="rounded-[var(--radius-control)] p-1.5 text-ink-subtle transition-colors hover:bg-[var(--color-brand)]/10 hover:text-[var(--color-brand)] cursor-pointer"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => setIsCheckoutOpen(true)}
-                    className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold cursor-pointer"
-                  >
-                    + Bill
-                  </button>
-                  <button
-                    onClick={() => openEditModal(item)}
-                    title="Edit item"
-                    aria-label={`Edit item ${item.name}`}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
+              </Surface>
+            );
+          })}
         </div>
       )}
 
       {/* Add / Edit Item Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 animate-fadeIn">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
-            <div className="bg-[#1E1B4B] text-white p-4 flex items-center justify-between">
+        <div className={DIALOG.overlay}>
+          <div className={`${DIALOG.card} flex max-h-[92vh] max-w-md flex-col`}>
+            <div className={DIALOG.header}>
               <div className="flex items-center gap-2">
-                <PackagePlus className="w-5 h-5 text-indigo-300" />
-                <h3 className="font-bold text-base">{editingItem ? 'Edit Item' : 'Add Inventory Item'}</h3>
+                <PackagePlus className={DIALOG.icon} />
+                <h3 className={DIALOG.title}>{editingItem ? 'Edit item' : 'Add item'}</h3>
               </div>
               <button
                 onClick={() => setIsAddModalOpen(false)}
-                className="p-1 rounded-lg text-slate-300 hover:text-white hover:bg-white/10"
+                aria-label="Close"
+                className={DIALOG.close}
               >
-                <X className="w-5 h-5" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateItem} className="p-5 space-y-4">
+            <form onSubmit={handleCreateItem} className="space-y-4 overflow-y-auto p-5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Item Name *</label>
+                <label className={LABEL} htmlFor="item-name">Item name *</label>
                 <input
+                  id="item-name"
                   type="text"
                   required
                   placeholder="e.g. Cotton Shirt or Basmati Rice"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  className={FIELD}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Item Code / SKU</label>
+                  <label className={LABEL} htmlFor="item-code">Item code / SKU</label>
                   <input
+                    id="item-code"
                     type="text"
                     placeholder="e.g. SKU-101"
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono"
+                    className={`${FIELD} num`}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Unit</label>
+                  <label className={LABEL} htmlFor="item-unit">Unit</label>
                   <select
+                    id="item-unit"
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                    className={FIELD}
                   >
                     <option value="Pcs">Pcs</option>
                     <option value="Bags">Bags</option>
@@ -236,90 +269,94 @@ export default function ItemsView() {
 
               {/* Barcode: manual entry or camera scan */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Barcode</label>
+                <label className={LABEL} htmlFor="item-barcode">Barcode</label>
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
-                    <BarcodeIcon className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <BarcodeIcon className="absolute left-3 top-2.5 h-4 w-4 text-ink-subtle" />
                     <input
+                      id="item-barcode"
                       type="text"
                       placeholder="e.g. 8901234567890"
                       value={barcode}
                       onChange={(e) => setBarcode(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono"
+                      className={`${FIELD} num pl-9`}
                     />
                   </div>
                   <button
                     type="button"
                     onClick={() => setIsScannerOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-semibold cursor-pointer shrink-0"
+                    className="flex shrink-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--color-brand)]/10 px-3 py-2 text-micro font-bold text-[var(--color-brand)] transition-colors hover:bg-[var(--color-brand)]/15 cursor-pointer"
                   >
-                    <BarcodeIcon className="w-3.5 h-3.5" />
+                    <BarcodeIcon className="h-3.5 w-3.5" />
                     <span>Scan</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Scan a product's barcode with the camera, or type it — used by the POS barcode scanner.
+                <p className="mt-1 text-micro text-ink-subtle">
+                  Scan the product's barcode with the camera, or type it — the POS scanner looks here.
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Sale Price (₹) *</label>
+                  <label className={LABEL} htmlFor="item-price">Sale price (₹) *</label>
                   <input
+                    id="item-price"
                     type="number"
                     step="any"
                     required
                     placeholder="0.00"
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none font-bold"
+                    className={`${FIELD} num font-bold`}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                    {editingItem ? 'Stock (adjust)' : 'Opening Stock'}
+                  <label className={LABEL} htmlFor="item-stock">
+                    {editingItem ? 'Stock (adjust)' : 'Opening stock'}
                   </label>
                   <input
+                    id="item-stock"
                     type="number"
                     placeholder="0"
                     value={stock}
                     onChange={(e) => setStock(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    className={`${FIELD} num`}
                   />
                 </div>
               </div>
 
               {/* Low-stock alert: the level that turns the item's badge amber */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Low-stock alert at</label>
+                <label className={LABEL} htmlFor="item-threshold">Low-stock alert at</label>
                 <input
+                  id="item-threshold"
                   type="number"
                   min="0"
                   placeholder={String(DEFAULT_LOW_STOCK_THRESHOLD)}
                   value={lowStockThreshold}
                   onChange={(e) => setLowStockThreshold(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  className={`${FIELD} num`}
                 />
-                <p className="text-[11px] text-slate-400 mt-1">
+                <p className="mt-1 text-micro text-ink-subtle">
                   Warn when stock falls to this level or below. 0 turns the alert off.
                 </p>
               </div>
 
-              <div className="pt-2 flex items-center gap-3">
+              <div className="flex items-center gap-3 pt-1">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
+                  className="flex-1 rounded-[var(--radius-control)] bg-surface py-2.5 text-body font-semibold text-ink-muted ring-1 ring-hairline/70 transition-colors hover:bg-surface-2 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand)] py-2.5 text-body font-bold text-white shadow-e1 transition-opacity hover:opacity-90 disabled:opacity-60 cursor-pointer"
                 >
-                  {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{editingItem ? 'Save Changes' : 'Save Item'}</span>
+                  {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{editingItem ? 'Save changes' : 'Save item'}</span>
                 </button>
               </div>
             </form>

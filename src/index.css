@@ -1,21 +1,88 @@
 @import "tailwindcss";
 
-/* Custom 'xs' breakpoint used across the UI (e.g. hidden xs:inline-block) */
+/* ============================================================================
+   Design tokens — the single owner of colour, elevation, radius and type.
+   Components use these names (bg-surface, text-ink, ring-hairline), never raw
+   palette classes, so a palette change is this file only: a dark palette is a
+   second block of these same names, not a dark: variant on every element.
+   Money colours (in/out/warn/danger) are reserved for money and state.
+   ============================================================================ */
 @theme {
+  /* Custom 'xs' breakpoint used across the UI (e.g. hidden xs:inline-block) */
   --breakpoint-xs: 30rem; /* 480px */
+
+  /* Surfaces: elevation by name, not by guessing opacities */
+  --color-canvas: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-surface-2: #f2f4f7;
+  --color-surface-3: #e9ecf2;
+  --color-hairline: #e6e8ee;
+
+  /* Ink */
+  --color-ink: #0d1117;
+  --color-ink-muted: #5b6178;
+  --color-ink-subtle: #8b91a7;
+
+  /* Brand + reserved money semantics */
+  --color-brand: #4f46e5;
+  --color-brand-deep: #1e1b4b;
+  --color-in: #059669;
+  --color-out: #7c3aed;
+  --color-warn: #d97706;
+  --color-danger: #e11d48;
+
+  /* Scrim: the one overlay shade behind drawers, dialogs and the sheet */
+  --color-scrim: rgb(15 23 42 / 0.6);
+
+  /* Bright variants of the money/state colours, for status that sits on the
+     dark brand chrome (header, dialog headers, chart tooltip) where the
+     light-mode shades go muddy. Same meanings, one step brighter. */
+  --color-brand-bright: #a5b4fc;
+  --color-in-bright: #6ee7b7;
+  --color-warn-bright: #fcd34d;
+  --color-danger-bright: #fda4af;
+
+  /* Elevation: ambient + contact shadow per level */
+  --shadow-e1: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
+  --shadow-e2: 0 2px 4px -1px rgb(16 24 40 / 0.06), 0 6px 16px -4px rgb(16 24 40 / 0.1);
+  --shadow-e3: 0 12px 32px -8px rgb(16 24 40 / 0.16), 0 2px 8px -2px rgb(16 24 40 / 0.06);
+
+  --radius-card: 14px;
+  --radius-control: 10px;
+  --ease-quint: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Type scale */
+  --text-display: 1.75rem;
+  --text-display--line-height: 1.15;
+  --text-display--letter-spacing: -0.021em;
+  --text-title: 1.125rem;
+  --text-title--line-height: 1.3;
+  --text-title--letter-spacing: -0.014em;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.5;
+  --text-micro: 0.6875rem;
+  --text-micro--line-height: 1.35;
+  --text-micro--letter-spacing: 0.01em;
+
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Money and any figure that must not jitter as digits change. */
+@utility num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "cv05" 1;
+  letter-spacing: -0.006em;
 }
 
 @layer base {
-  :root {
-    --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  }
-  
   html, body {
     margin: 0;
     padding: 0;
     min-height: 100%;
     font-family: var(--font-sans);
-    background-color: #F8F9FA;
+    font-optical-sizing: auto;
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
   }
@@ -87,6 +154,12 @@
   @page {
     size: 80mm auto;
     margin: 4mm;
+  }
+  /* Screen-only affordances must never reach paper: a blurred or tinted
+     surface can grey out the last rows of a receipt. */
+  [class*="backdrop-blur"] {
+    backdrop-filter: none !important;
+    background-color: #ffffff !important;
   }
   /* Both sides carry !important so no utility class on any app element can
      re-reveal itself on paper: the hide wins on specificity, and the print

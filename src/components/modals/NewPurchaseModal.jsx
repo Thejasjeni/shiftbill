@@ -4,6 +4,7 @@ import { useDashboard } from '../../context/DashboardContext';
 import { useProducts } from '../../hooks/useProducts';
 import SearchableProductSelect from '../ui/SearchableProductSelect';
 import { incrementStock } from '../../lib/firestoreApi';
+import { BUTTON, DIALOG, FIELD, HINT, LABEL } from '../ui/controls';
 
 export default function NewPurchaseModal() {
   const { isAddPurchaseOpen, setIsAddPurchaseOpen, addPurchase, isFirebaseConfigured } = useDashboard();
@@ -13,16 +14,19 @@ export default function NewPurchaseModal() {
   const [product, setProduct] = useState(null);
   const [qty, setQty] = useState('');
   const [amount, setAmount] = useState('');
+  const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isAddPurchaseOpen) return null;
+
+  const close = () => setIsAddPurchaseOpen(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     // `amount` is a string from the input: validate with Number()
     const amountNum = Number(amount);
     if (!amount || Number.isNaN(amountNum) || amountNum <= 0) {
-      alert("Please enter a valid purchase bill amount");
+      setError('Enter the bill amount you were charged.');
       return;
     }
 
@@ -30,10 +34,11 @@ export default function NewPurchaseModal() {
     // so its stock can be incremented.
     const qtyNum = Number(qty);
     if (product && (!qty || Number.isNaN(qtyNum) || qtyNum <= 0)) {
-      alert("Please enter the quantity received for the selected product");
+      setError(`Enter how many ${product.unit || 'units'} of ${product.name} arrived, so the stock can go up.`);
       return;
     }
 
+    setError(null);
     setIsSubmitting(true);
     try {
       await addPurchase({
@@ -59,53 +64,49 @@ export default function NewPurchaseModal() {
       setIsAddPurchaseOpen(false);
     } catch (err) {
       console.error(err);
-      alert("Failed to record purchase: " + err.message);
+      setError(`Could not save this purchase: ${err.message}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xs p-0 sm:p-4 animate-fadeIn">
-      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className={DIALOG.overlaySheet}>
+      <div className={`${DIALOG.cardSheet} flex max-h-[90vh] flex-col sm:max-w-md`}>
         {/* Header */}
-        <div className="bg-[#1E1B4B] text-white px-5 py-4 flex items-center justify-between">
+        <div className={DIALOG.headerSheet}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center">
-              <ShoppingCart className="w-4 h-4" />
+            <div className="grid h-8 w-8 place-items-center rounded-[var(--radius-control)] bg-[var(--color-out)]/20 text-violet-300">
+              <ShoppingCart className="h-4 w-4" />
             </div>
             <div className="text-left">
-              <h3 className="font-bold text-base leading-tight">Add Purchase Transaction</h3>
-              <p className="text-[11px] text-slate-300">
-                {isFirebaseConfigured ? 'Syncs to Firebase · pick a product to auto-add stock' : 'Stores in local session'}
+              <h3 className={DIALOG.title}>Add purchase</h3>
+              <p className="text-micro text-white/70">
+                {isFirebaseConfigured
+                  ? 'Pick a product to add its stock at the same time'
+                  : 'Stored on this device only'}
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setIsAddPurchaseOpen(false)}
-            className="p-1 rounded-lg text-slate-300 hover:text-white hover:bg-white/10"
-          >
-            <X className="w-5 h-5" />
+          <button onClick={close} className={DIALOG.close} aria-label="Close">
+            <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-left">
+        <form onSubmit={handleSubmit} className={`${DIALOG.body} overflow-y-auto text-left`}>
           {/* Supplier Name */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Supplier / Vendor Name
-            </label>
+            <label className={LABEL} htmlFor="purchase-supplier">Supplier name</label>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <Building className="w-4 h-4" />
-              </div>
+              <Building className="absolute left-3 top-2.5 h-4 w-4 text-ink-subtle" />
               <input
+                id="purchase-supplier"
                 type="text"
                 placeholder="e.g. Krishna Wholesalers"
                 value={supplierName}
                 onChange={(e) => setSupplierName(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+                className={`${FIELD} pl-9`}
               />
             </div>
           </div>
@@ -122,37 +123,31 @@ export default function NewPurchaseModal() {
           {/* Quantity — only relevant when a product is selected */}
           {product && (
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Quantity Received ({product.unit})
-              </label>
+              <label className={LABEL} htmlFor="purchase-qty">Quantity received ({product.unit})</label>
               <div className="relative">
-                <Package className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <Package className="absolute left-3 top-2.5 h-4 w-4 text-ink-subtle" />
                 <input
+                  id="purchase-qty"
                   type="number"
                   step="any"
                   min="0"
                   placeholder="e.g. 10"
                   value={qty}
                   onChange={(e) => setQty(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className={`${FIELD} num pl-9 font-semibold`}
                 />
               </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Stock will be incremented automatically on save.
-              </p>
+              <p className={HINT}>Stock goes up by this much when you save.</p>
             </div>
           )}
 
           {/* Amount Field */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Bill Amount (₹) <span className="text-rose-500">*</span>
-            </label>
+            <label className={LABEL} htmlFor="purchase-amount">Bill amount (₹) <span className="text-[var(--color-danger)]">*</span></label>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <IndianRupee className="w-4 h-4" />
-              </div>
+              <IndianRupee className="absolute left-3 top-3 h-4 w-4 text-ink-subtle" />
               <input
+                id="purchase-amount"
                 type="number"
                 step="any"
                 required
@@ -160,38 +155,35 @@ export default function NewPurchaseModal() {
                 placeholder="0.00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className={`${FIELD} num pl-9 text-title font-bold`}
               />
             </div>
           </div>
 
-          {/* Dynamic Calculation note */}
-          <div className="p-3 rounded-xl bg-purple-50 border border-purple-100 text-xs text-purple-900">
-            <span className="font-semibold">Note:</span> Adds a new <code>type = 'purchase'</code> row to <code>transactions</code> and updates <strong>Total Payable</strong>.
-          </div>
+          {error && (
+            <p role="alert" className="rounded-[var(--radius-control)] bg-[var(--color-danger)]/10 px-3 py-2 text-micro text-[var(--color-danger)] ring-1 ring-[var(--color-danger)]/25">
+              {error}
+            </p>
+          )}
+
+          {/* What this will do, in the seller's words */}
+          <p className="rounded-[var(--radius-control)] bg-[var(--color-out)]/8 px-3 py-2 text-micro text-ink-muted ring-1 ring-[var(--color-out)]/20">
+            Adds this bill to what you owe the supplier. The money is ready to pay from your books.
+          </p>
 
           {/* Actions */}
-          <div className="pt-2 flex items-center gap-3">
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={() => setIsAddPurchaseOpen(false)}
-              className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 cursor-pointer"
-            >
+          <div className={DIALOG.footer}>
+            <button type="button" disabled={isSubmitting} onClick={close} className={`${BUTTON.secondary} flex-1`}>
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
+            <button type="submit" disabled={isSubmitting} className={`${BUTTON.primary} flex-1`}>
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Saving...</span>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Saving…</span>
                 </>
               ) : (
-                <span>Save Purchase</span>
+                <span>Save purchase</span>
               )}
             </button>
           </div>

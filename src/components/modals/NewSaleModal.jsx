@@ -1,25 +1,30 @@
 import React, { useState } from 'react';
 import { X, Receipt, IndianRupee, User, Loader2 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
+import { BUTTON, DIALOG, FIELD, HINT, LABEL } from '../ui/controls';
 
 export default function NewSaleModal() {
   const { isAddSaleOpen, setIsAddSaleOpen, addSale, isFirebaseConfigured } = useDashboard();
 
   const [partyName, setPartyName] = useState('');
   const [amount, setAmount] = useState('');
+  const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isAddSaleOpen) return null;
+
+  const close = () => setIsAddSaleOpen(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     // `amount` is a string from the input: validate with Number()
     const amountNum = Number(amount);
     if (!amount || Number.isNaN(amountNum) || amountNum <= 0) {
-      alert("Please enter a valid sale amount");
+      setError('Enter the amount the customer paid — for example 450.');
       return;
     }
 
+    setError(null);
     setIsSubmitting(true);
     try {
       await addSale({
@@ -33,67 +38,60 @@ export default function NewSaleModal() {
       setIsAddSaleOpen(false);
     } catch (err) {
       console.error(err);
-      alert("Failed to record sale: " + err.message);
+      setError(`Could not save this sale: ${err.message}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xs p-0 sm:p-4 animate-fadeIn">
-      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className={DIALOG.overlaySheet}>
+      <div className={`${DIALOG.cardSheet} flex max-h-[90vh] flex-col sm:max-w-md`}>
         {/* Header */}
-        <div className="bg-[#1E1B4B] text-white px-5 py-4 flex items-center justify-between">
+        <div className={DIALOG.headerSheet}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-              <Receipt className="w-4 h-4" />
+            <div className="grid h-8 w-8 place-items-center rounded-[var(--radius-control)] bg-[var(--color-in)]/20 text-[var(--color-in-bright)]">
+              <Receipt className="h-4 w-4" />
             </div>
             <div className="text-left">
-              <h3 className="font-bold text-base leading-tight">Add Sale Transaction</h3>
-              <p className="text-[11px] text-slate-300">
-                {isFirebaseConfigured ? 'Syncs directly to Firebase' : 'Stores in local session'}
+              <h3 className={DIALOG.title}>Add sale</h3>
+              <p className="text-micro text-white/70">
+                {isFirebaseConfigured
+                  ? 'Saved to your books — uploads automatically when offline'
+                  : 'Stored on this device only'}
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setIsAddSaleOpen(false)}
-            className="p-1 rounded-lg text-slate-300 hover:text-white hover:bg-white/10"
-          >
-            <X className="w-5 h-5" />
+          <button onClick={close} className={DIALOG.close} aria-label="Close">
+            <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-left">
+        <form onSubmit={handleSubmit} className={`${DIALOG.body} overflow-y-auto text-left`}>
           {/* Party / Customer Name */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Party / Customer Name
-            </label>
+            <label className={LABEL} htmlFor="sale-party">Customer name</label>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <User className="w-4 h-4" />
-              </div>
+              <User className="absolute left-3 top-2.5 h-4 w-4 text-ink-subtle" />
               <input
+                id="sale-party"
                 type="text"
-                placeholder="e.g. Ramesh Traders or Cash Customer"
+                placeholder="e.g. Ramesh Traders, or leave blank"
                 value={partyName}
                 onChange={(e) => setPartyName(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                className={`${FIELD} pl-9`}
               />
             </div>
           </div>
 
           {/* Amount Field */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Sale Amount (₹) <span className="text-rose-500">*</span>
-            </label>
+            <label className={LABEL} htmlFor="sale-amount">Sale amount (₹) <span className="text-[var(--color-danger)]">*</span></label>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <IndianRupee className="w-4 h-4" />
-              </div>
+              <IndianRupee className="absolute left-3 top-3 h-4 w-4 text-ink-subtle" />
               <input
+                id="sale-amount"
                 type="number"
                 step="any"
                 required
@@ -101,38 +99,36 @@ export default function NewSaleModal() {
                 placeholder="0.00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className={`${FIELD} num pl-9 text-title font-bold`}
               />
             </div>
           </div>
 
-          {/* Dynamic Calculation Note */}
-          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-xs text-emerald-800">
-            <span className="font-semibold">Note:</span> Adds a new <code>type = 'sale'</code> row to <code>transactions</code> and updates <strong>Total Receivable</strong>.
-          </div>
+          {error && (
+            <p role="alert" className="rounded-[var(--radius-control)] bg-[var(--color-danger)]/10 px-3 py-2 text-micro text-[var(--color-danger)] ring-1 ring-[var(--color-danger)]/25">
+              {error}
+            </p>
+          )}
+
+          {/* What this will do, in the seller's words */}
+          <p className={`rounded-[var(--radius-control)] bg-[var(--color-in)]/8 px-3 py-2 text-micro text-ink-muted ring-1 ring-[var(--color-in)]/20`}>
+            Adds this sale to your books and to what the customer owes you.
+          </p>
+          <p className={HINT}>A blank name bills as Cash Customer.</p>
 
           {/* Actions */}
-          <div className="pt-2 flex items-center gap-3">
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={() => setIsAddSaleOpen(false)}
-              className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 cursor-pointer"
-            >
+          <div className={DIALOG.footer}>
+            <button type="button" disabled={isSubmitting} onClick={close} className={`${BUTTON.secondary} flex-1`}>
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
+            <button type="submit" disabled={isSubmitting} className={`${BUTTON.success} flex-1`}>
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Saving...</span>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Saving…</span>
                 </>
               ) : (
-                <span>Save Sale</span>
+                <span>Save sale</span>
               )}
             </button>
           </div>

@@ -8,12 +8,8 @@ import {
   FileBarChart,
   Settings,
   X,
-  Sparkles,
   ChevronRight,
-  ShieldAlert,
-  HelpCircle,
-  LogOut,
-  Building2
+  HelpCircle
 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 import { NAVIGATION_ITEMS } from '../../data/mockData';
@@ -27,6 +23,15 @@ const ICONS_MAP = {
   ShoppingBag,
   FileBarChart,
   Settings,
+};
+
+// Chrome on the deep brand surface: one white-opacity scale for text and
+// dividers, so the bar reads as one piece rather than five shades of indigo.
+const CHROME = {
+  divider: 'border-white/10',
+  label: 'text-micro font-bold uppercase tracking-wider text-white/45',
+  idle: 'text-white/75 hover:bg-white/10 hover:text-white',
+  active: 'bg-[var(--color-brand)] text-white shadow-e1 font-semibold'
 };
 
 export default function Sidebar() {
@@ -65,103 +70,79 @@ export default function Sidebar() {
       {isMobileDrawerOpen && (
         <div
           onClick={() => setIsMobileDrawerOpen(false)}
-          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs transition-opacity lg:hidden"
+          className="fixed inset-0 z-40 bg-scrim backdrop-blur-xs lg:hidden"
           aria-hidden="true"
         />
       )}
 
       {/* Sidebar / Mobile Drawer Container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-72 bg-[#1E1B4B] text-slate-200 flex flex-col justify-between transition-transform duration-300 ease-in-out shadow-2xl lg:shadow-none lg:static lg:translate-x-0 ${
+        className={`fixed top-0 bottom-0 left-0 z-50 flex w-72 flex-col justify-between bg-[var(--color-brand-deep)] text-white/75 shadow-e3 transition-transform duration-300 ease-[var(--ease-quint)] lg:static lg:translate-x-0 lg:shadow-none ${
           isMobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {/* Top Header / Profile Info */}
         <div>
-          <div className="flex items-center justify-between p-4 border-b border-indigo-900/60">
+          <div className={`flex items-center justify-between border-b p-4 ${CHROME.divider}`}>
             <div className="flex items-center gap-3">
               <img
                 src="/logo.png"
                 alt="SwiftBill Logo"
-                className="w-10 h-10 rounded-xl object-contain shadow-lg ring-1 ring-white/20"
+                className="h-10 w-10 rounded-[var(--radius-control)] object-contain ring-1 ring-white/20"
               />
-              <div className="flex flex-col text-left overflow-hidden">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-white text-base tracking-tight">
-                    SwiftBill
-                  </span>
-                  <span className="text-[9px] uppercase font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    FOSS
-                  </span>
-                </div>
-                <span className="text-xs text-indigo-200 truncate max-w-[150px]">
+              <div className="flex flex-col overflow-hidden text-left">
+                <span className="truncate text-title font-bold tracking-tight text-white">
                   {businessInfo.name}
                 </span>
-                <span className="text-[10px] text-indigo-300/80 font-mono">
-                  {businessInfo.gstin}
-                </span>
+                {businessInfo.gstin && (
+                  <span className="num text-micro text-white/50">GSTIN {businessInfo.gstin}</span>
+                )}
               </div>
             </div>
 
             {/* Mobile Close Button */}
             <button
               onClick={() => setIsMobileDrawerOpen(false)}
-              className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 active:bg-white/20 transition-colors"
+              className="rounded-[var(--radius-control)] p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white active:bg-white/20 cursor-pointer lg:hidden"
               aria-label="Close menu"
             >
-              <X className="w-5 h-5" />
+              <X className="h-5 w-5" />
             </button>
           </div>
 
-          {/* Open Source Status Strip (Replaces subscription warning) */}
-          <div className="mx-3 mt-3 p-2.5 rounded-xl bg-gradient-to-r from-indigo-900/60 to-emerald-950/40 border border-emerald-500/30 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
-              <div className="text-left">
-                <div className="text-xs font-semibold text-emerald-200 leading-none">Community Edition</div>
-                <div className="text-[10px] text-slate-300 leading-tight mt-0.5">100% Free • No Subscription</div>
-              </div>
-            </div>
-            <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider">
-              Free
-            </span>
-          </div>
-
           {/* Main Navigation Links */}
-          <nav className="p-3 space-y-1 mt-2 text-left">
-            <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-indigo-300/60">
-              Main Menu
+          <nav className="mt-2 space-y-1 p-3 text-left">
+            <div className={`px-3 py-1.5 ${CHROME.label}`}>
+              Main menu
             </div>
             {NAVIGATION_ITEMS.map((item) => {
               const Icon = ICONS_MAP[item.icon] || LayoutDashboard;
               const isActive = activeNavTab === item.id;
+              const count = getDynamicCount(item.id);
               return (
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
-                    isActive
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-semibold'
-                      : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`group flex w-full items-center justify-between rounded-[var(--radius-control)] px-3.5 py-2.5 text-body transition-colors cursor-pointer ${
+                    isActive ? CHROME.active : CHROME.idle
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Icon className={`w-5 h-5 transition-transform group-hover:scale-105 ${
-                      isActive ? 'text-white' : 'text-indigo-300 group-hover:text-white'
-                    }`} />
+                    <Icon className="h-5 w-5" />
                     <span>{item.label}</span>
                   </div>
-                  {getDynamicCount(item.id) && (
+                  {count && (
                     <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        getDynamicCount(item.id).tone === 'warn'
-                          ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                      className={`num rounded-full px-2 py-0.5 text-micro font-bold ${
+                        count.tone === 'warn'
+                          ? 'bg-[var(--color-warn)]/25 text-[var(--color-warn-bright)] ring-1 ring-[var(--color-warn)]/40'
                           : isActive
-                            ? 'bg-indigo-700/80 text-white'
-                            : 'bg-indigo-950 text-indigo-300 border border-indigo-800/60'
+                            ? 'bg-white/20 text-white'
+                            : 'bg-white/10 text-white/70'
                       }`}
                     >
-                      {getDynamicCount(item.id).value}
+                      {count.value}
                     </span>
                   )}
                 </button>
@@ -171,23 +152,21 @@ export default function Sidebar() {
         </div>
 
         {/* Bottom Utility / Open Source Community Section */}
-        <div className="p-3 border-t border-indigo-900/60 space-y-1">
+        <div className={`space-y-1 border-t p-3 ${CHROME.divider}`}>
           <button
-            onClick={() => alert("SwiftBill Open Source: Free forever under MIT license. No credit card or subscription required!")}
-            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-slate-300 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+            onClick={() => alert("SwiftBill is free and open source under the MIT licence. You can contribute, report a bug, or read the docs on GitHub.")}
+            className="flex w-full items-center justify-between rounded-[var(--radius-control)] px-3 py-2 text-body text-white/70 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
           >
-            <div className="flex items-center gap-2.5">
-              <HelpCircle className="w-4 h-4 text-indigo-300" />
-              <span>Community & Docs</span>
-            </div>
-            <ChevronRight className="w-3.5 h-3.5 text-indigo-400" />
-          </button>
-          
-          <div className="pt-2 px-3 text-[11px] text-slate-400 text-left flex justify-between items-center">
-            <span>SwiftBill v1.0.0 (FOSS)</span>
-            <span className="text-emerald-400 flex items-center gap-1 font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Offline Ready
+            <span className="flex items-center gap-2.5">
+              <HelpCircle className="h-4 w-4" />
+              <span>Help &amp; docs</span>
             </span>
+            <ChevronRight className="h-3.5 w-3.5 text-white/40" />
+          </button>
+
+          <div className="flex items-center justify-between px-3 pt-2 text-left text-micro text-white/45">
+            <span>Works offline</span>
+            <span className="num">v1.0.0</span>
           </div>
         </div>
       </aside>

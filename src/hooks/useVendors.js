@@ -21,7 +21,8 @@ export function useVendors() {
         setVendors(rows);
         setIsLoading(false);
       },
-      (message) => setError(message || 'Failed to load vendors')
+      // Null means the read recovered; only a message is an error.
+      (message) => setError(message || null)
     );
     // Re-subscribes on sign-in/out so the list matches who is signed in.
   }, [user?.uid]);

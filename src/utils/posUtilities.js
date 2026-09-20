@@ -2,13 +2,12 @@ import QRCode from 'qrcode';
 import { jsPDF } from 'jspdf';
 import { DEFAULT_BUSINESS_INFO } from '../data/businessProfile';
 import { billTotalsFor, invoiceItems, lineAmount } from './billTotals';
+import { formatAmount } from './money';
 
-// jsPDF's built-in fonts have no ₹ glyph, so the PDF writes out "Rs."
+// jsPDF's built-in fonts have no ₹ glyph, so the PDF writes out "Rs." and a
+// receipt-style two decimals; the number itself comes from the shared policy.
 const PDF_CURRENCY = 'Rs. ';
-const pdfMoney = (value) => `${PDF_CURRENCY}${Number(value || 0).toLocaleString('en-IN', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2
-})}`;
+const pdfMoney = (value) => `${PDF_CURRENCY}${formatAmount(value, 2)}`;
 // ASCII only: a Unicode minus pushes jsPDF into UTF-16 strings that the
 // standard font may not have a glyph for
 const pdfSigned = (value) => (value < 0 ? `(-) ${pdfMoney(Math.abs(value))}` : pdfMoney(value));
@@ -336,7 +335,7 @@ export async function generateInvoicePdf(invoice = {}, business = {}) {
 export async function shareInvoiceOnWhatsApp(customerPhone = '', invoice = {}, business = {}) {
   const profile = { ...DEFAULT_BUSINESS_INFO, ...business };
   const itemsText = invoiceItems(invoice)
-    .map(i => `• ${i.name || i.item_name} x ${i.quantity} = ${PDF_CURRENCY}${lineAmount(i).toFixed(0)}`)
+    .map(i => `• ${i.name || i.item_name} x ${i.quantity} = ${PDF_CURRENCY}${formatAmount(lineAmount(i))}`)
     .join('\n');
 
   const cleanPhone = (customerPhone || '').replace(/[^0-9]/g, '');
@@ -355,7 +354,7 @@ export async function shareInvoiceOnWhatsApp(customerPhone = '', invoice = {}, b
     '--------------------------------',
     itemsText,
     '--------------------------------',
-    `*TOTAL PAYABLE: ${PDF_CURRENCY}${Number(invoice.amount || 0).toLocaleString('en-IN')}*`,
+    `*TOTAL PAYABLE: ${PDF_CURRENCY}${formatAmount(invoice.amount)}*`,
     upiPayLink ? `\n📲 *Pay instantly via UPI:*\n${upiPayLink}` : null,
     '\n_Thank you for your business!_'
   ].filter(Boolean).join('\n');

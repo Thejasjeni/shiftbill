@@ -2,6 +2,11 @@ import React, { useState } from 'react';
 import { Users, Plus, Phone, Search, FileText, X, UserPlus, Building2 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 import VendorForm from './VendorForm';
+import Badge from '../ui/Badge';
+import EmptyState from '../ui/EmptyState';
+import Money from '../ui/Money';
+import Surface from '../ui/Surface';
+import { BUTTON, DIALOG, FIELD, LABEL } from '../ui/controls';
 
 export default function PartiesView() {
   const { currentData, setActiveReportModal, addParty } = useDashboard();
@@ -15,14 +20,6 @@ export default function PartiesView() {
   const [phone, setPhone] = useState('');
   const [type, setType] = useState('Customer');
   const [openingBalance, setOpeningBalance] = useState('');
-
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(Math.abs(val || 0));
-  };
 
   const handleCreateParty = (e) => {
     e.preventDefault();
@@ -55,32 +52,26 @@ export default function PartiesView() {
   return (
     <div className="space-y-4 text-left">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+      <Surface className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-lg sm:text-xl font-bold text-slate-900">Parties & Ledgers</h1>
-          <p className="text-xs text-slate-500">Manage customers, suppliers and outstanding balances</p>
+          <h1 className="text-title font-bold text-ink">Parties &amp; ledgers</h1>
+          <p className="text-micro text-ink-muted">Customers, suppliers and what each side still owes</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsVendorRegistryOpen(o => !o)}
-            className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold shadow-xs cursor-pointer border transition-all ${
-              isVendorRegistryOpen
-                ? 'bg-indigo-600 text-white border-indigo-600'
-                : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
-            }`}
+            aria-expanded={isVendorRegistryOpen}
+            className={isVendorRegistryOpen ? BUTTON.primary : BUTTON.secondary}
           >
-            <Building2 className="w-4 h-4" />
-            <span>Vendor Registry</span>
+            <Building2 className="h-4 w-4" />
+            <span>Vendor registry</span>
           </button>
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-xs cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Party</span>
+          <button onClick={() => setIsAddModalOpen(true)} className={BUTTON.primary}>
+            <Plus className="h-4 w-4" />
+            <span>Add party</span>
           </button>
         </div>
-      </div>
+      </Surface>
 
       {/* Firestore-backed Vendor/Client Registry (collapsible) */}
       {isVendorRegistryOpen && (
@@ -88,14 +79,15 @@ export default function PartiesView() {
       )}
 
       {/* Filter Tabs & Search */}
-      <div className="flex flex-col sm:flex-row items-center gap-3">
-        <div className="flex bg-slate-200/70 p-1 rounded-xl w-full sm:w-auto">
+      <div className="flex flex-col items-center gap-3 sm:flex-row">
+        <div className="flex w-full rounded-[var(--radius-control)] bg-surface-2 p-1 ring-1 ring-hairline/60 sm:w-auto">
           {['All', 'Customers', 'Suppliers'].map((tab) => (
             <button
               key={tab}
               onClick={() => setFilterType(tab)}
-              className={`flex-1 sm:flex-none px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                filterType === tab ? 'bg-white text-indigo-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              aria-pressed={filterType === tab}
+              className={`flex-1 rounded-lg px-4 py-1.5 text-micro font-bold transition-all cursor-pointer sm:flex-none ${
+                filterType === tab ? 'bg-surface text-ink shadow-e1' : 'text-ink-muted hover:text-ink'
               }`}
             >
               {tab}
@@ -103,71 +95,78 @@ export default function PartiesView() {
           ))}
         </div>
         <div className="relative w-full sm:flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-ink-subtle" />
           <input
             type="text"
-            placeholder="Search parties by name or mobile..."
+            placeholder="Search parties by name or mobile…"
+            aria-label="Search parties"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-white rounded-xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className={`${FIELD} pl-9`}
           />
         </div>
       </div>
 
       {/* Party Cards List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {filtered.length === 0 ? (
-          <div className="col-span-full py-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200/80">
-            <Users className="w-10 h-10 mx-auto text-slate-300 stroke-1" />
-            <p className="text-sm font-semibold text-slate-600 mt-2">No parties added yet</p>
-            <p className="text-xs text-slate-400 mt-0.5">Click "Add Party" above or create an invoice to record customers</p>
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="mt-3 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-semibold cursor-pointer"
-            >
-              + Create First Party
-            </button>
-          </div>
+          <Surface padding="none" className="col-span-full">
+            <EmptyState
+              icon={Users}
+              title={currentData.parties.length === 0 ? 'No parties yet' : 'Nothing matches that search'}
+              hint={
+                currentData.parties.length === 0
+                  ? 'Add the customers and suppliers you deal with, so bills and payments can be tracked against them.'
+                  : 'Try a different name or mobile number.'
+              }
+              action={
+                currentData.parties.length === 0 ? (
+                  <button onClick={() => setIsAddModalOpen(true)} className={BUTTON.quiet}>
+                    + Add the first party
+                  </button>
+                ) : null
+              }
+            />
+          </Surface>
         ) : (
           filtered.map(party => {
             const owesYou = party.balance > 0;
             const youOwe = party.balance < 0;
             return (
-              <div
+              <Surface
                 key={party.id}
+                padding="md"
+                className="flex cursor-pointer flex-col justify-between transition-shadow hover:shadow-e2 hover:ring-[var(--color-brand)]/30"
                 onClick={() => setActiveReportModal({ id: 'party-statement', title: `Party Statement: ${party.name}` })}
-                className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer flex flex-col justify-between"
               >
-                <div className="flex items-start justify-between">
-                  <div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm sm:text-base text-slate-900">{party.name}</span>
-                      <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
-                        {party.type}
-                      </span>
+                      <span className="truncate text-body font-bold text-ink">{party.name}</span>
+                      <Badge tone={party.type === 'Supplier' ? 'out' : 'neutral'}>{party.type}</Badge>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
-                      <Phone className="w-3 h-3 text-slate-400" />
+                    <div className="num mt-1 flex items-center gap-1.5 text-micro text-ink-muted">
+                      <Phone className="h-3 w-3 text-ink-subtle" />
                       <span>{party.phone}</span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-[11px] text-slate-400 font-medium">
-                      {owesYou ? 'Receivable' : youOwe ? 'Payable' : 'Settled'}
+                  <div className="shrink-0 text-right">
+                    <div className="text-micro font-medium text-ink-subtle">
+                      {owesYou ? 'To collect' : youOwe ? 'To pay' : 'Settled'}
                     </div>
-                    <div className={`text-base font-extrabold ${
-                      owesYou ? 'text-emerald-600' : youOwe ? 'text-purple-600' : 'text-slate-700'
-                    }`}>
-                      {formatCurrency(party.balance)}
-                    </div>
+                    <Money
+                      value={Math.abs(party.balance || 0)}
+                      tone={owesYou ? 'in' : youOwe ? 'out' : 'muted'}
+                      className="text-title font-extrabold"
+                    />
                   </div>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-indigo-600 font-semibold">
-                  <span>View Full Statement</span>
-                  <FileText className="w-4 h-4 text-indigo-500" />
+                <div className="mt-4 flex items-center justify-between border-t border-hairline/60 pt-3 text-micro font-semibold text-[var(--color-brand)]">
+                  <span>View full statement</span>
+                  <FileText className="h-4 w-4" />
                 </div>
-              </div>
+              </Surface>
             );
           })
         )}
@@ -175,60 +174,57 @@ export default function PartiesView() {
 
       {/* Add Party Modal Dialog */}
       {isAddModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 animate-fadeIn"
-          onClick={() => setIsAddModalOpen(false)}
-        >
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-[#1E1B4B] text-white p-4 flex items-center justify-between">
+        <div className={DIALOG.overlay} onClick={() => setIsAddModalOpen(false)}>
+          <div className={`${DIALOG.card} max-w-md`} onClick={(e) => e.stopPropagation()}>
+            <div className={DIALOG.header}>
               <div className="flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-indigo-300" />
-                <h3 className="font-bold text-base">Add New Party</h3>
+                <UserPlus className={DIALOG.icon} />
+                <h3 className={DIALOG.title}>Add party</h3>
               </div>
-              <button
-                onClick={() => setIsAddModalOpen(false)}
-                className="p-1 rounded-lg text-slate-300 hover:text-white hover:bg-white/10"
-              >
-                <X className="w-5 h-5" />
+              <button onClick={() => setIsAddModalOpen(false)} className={DIALOG.close} aria-label="Close">
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateParty} className="p-5 space-y-4">
+            <form onSubmit={handleCreateParty} className={DIALOG.body}>
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Party Name *</label>
+                <label className={LABEL} htmlFor="party-name">Party name *</label>
                 <input
+                  id="party-name"
                   type="text"
                   required
                   placeholder="e.g. Ramesh Kumar"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  className={FIELD}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Mobile / Phone Number</label>
+                <label className={LABEL} htmlFor="party-phone">Mobile / phone number</label>
                 <input
+                  id="party-phone"
                   type="tel"
-                  placeholder="e.g. +91 98765 43210"
+                  placeholder="e.g. 98765 43210"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  className={`${FIELD} num`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Party Type</label>
+                <span className={LABEL}>Party type</span>
                 <div className="grid grid-cols-2 gap-2">
                   {['Customer', 'Supplier'].map(t => (
                     <button
                       type="button"
                       key={t}
                       onClick={() => setType(t)}
-                      className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                      aria-pressed={type === t}
+                      className={`rounded-[var(--radius-control)] py-2 text-body font-bold ring-1 transition-all cursor-pointer ${
                         type === t
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          ? 'bg-[var(--color-brand)] text-white ring-[var(--color-brand)]'
+                          : 'bg-surface-2 text-ink-muted ring-hairline/70 hover:text-ink'
                       }`}
                     >
                       {t}
@@ -238,29 +234,23 @@ export default function PartiesView() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Opening Balance (₹)</label>
+                <label className={LABEL} htmlFor="party-balance">Opening balance (₹)</label>
                 <input
+                  id="party-balance"
                   type="number"
                   placeholder="0.00"
                   value={openingBalance}
                   onChange={(e) => setOpeningBalance(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  className={`${FIELD} num`}
                 />
               </div>
 
-              <div className="pt-2 flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
-                >
+              <div className={DIALOG.footer}>
+                <button type="button" onClick={() => setIsAddModalOpen(false)} className={`${BUTTON.secondary} flex-1`}>
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md cursor-pointer"
-                >
-                  Save Party
+                <button type="submit" className={`${BUTTON.primary} flex-1`}>
+                  Save party
                 </button>
               </div>
             </form>

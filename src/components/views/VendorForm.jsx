@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { Building2, Phone, Loader2, Save, RefreshCw, AlertTriangle, CheckCircle2, UserCog } from 'lucide-react';
 import { useVendors } from '../../hooks/useVendors';
 import { useDashboard } from '../../context/DashboardContext';
+import Badge from '../ui/Badge';
+import Surface from '../ui/Surface';
+import { BUTTON, FIELD, HINT, LABEL } from '../ui/controls';
 
 // ---------------------------------------------------------------------------
 // VendorForm — persistent vendor/client form (Name, GST No, Phone).
@@ -15,6 +18,23 @@ const TYPE_OPTIONS = [
 ];
 
 const GST_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/;
+
+// One notice treatment for the three states this form reports.
+const NOTICE = {
+  warn: 'bg-[var(--color-warn)]/10 text-[var(--color-warn)] ring-[var(--color-warn)]/25',
+  error: 'bg-[var(--color-danger)]/10 text-[var(--color-danger)] ring-[var(--color-danger)]/25',
+  ok: 'bg-[var(--color-in)]/10 text-[var(--color-in)] ring-[var(--color-in)]/25'
+};
+
+function Notice({ tone, children }) {
+  const Icon = tone === 'ok' ? CheckCircle2 : AlertTriangle;
+  return (
+    <div role={tone === 'ok' ? 'status' : 'alert'} className={`flex items-start gap-2 rounded-[var(--radius-control)] px-3 py-2 text-micro ring-1 ${NOTICE[tone]}`}>
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>{children}</span>
+    </div>
+  );
+}
 
 export default function VendorForm() {
   const { vendors, isLoading, error, isSaving, addVendor, refetch } = useVendors();
@@ -54,8 +74,8 @@ export default function VendorForm() {
       await addVendor(vendor);
       setSuccessMsg(
         navigator.onLine
-          ? `${vendor.name} saved to Firebase`
-          : `${vendor.name} saved on this device — will upload automatically when back online`
+          ? `${vendor.name} saved to the cloud`
+          : `${vendor.name} saved on this device — it will upload automatically when you are back online`
       );
       setName(''); setGstNo(''); setPhone('');
       setTimeout(() => setSuccessMsg(null), 4000);
@@ -64,111 +84,112 @@ export default function VendorForm() {
     }
   };
 
+  // Field styling with the error state layered on top of the shared treatment
+  const fieldClass = (hasError) => `${FIELD} pl-9 ${hasError ? 'ring-2 ring-[var(--color-danger)]/50' : ''}`;
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-5 text-left">
-      <div className="flex items-start justify-between mb-4">
+    <Surface className="text-left">
+      <div className="mb-4 flex items-start justify-between gap-2">
         <div>
-          <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-            <UserCog className="w-5 h-5 text-indigo-600" />
-            Vendor / Client Registry
+          <h2 className="flex items-center gap-2 text-title font-bold text-ink">
+            <UserCog className="h-5 w-5 text-[var(--color-brand)]" />
+            Vendor &amp; client registry
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Saved to Firebase — persists across refreshes
+          <p className="mt-0.5 text-micro text-ink-muted">
+            Saved to the cloud — and kept here when you are offline
           </p>
         </div>
         <button
           type="button"
           onClick={refetch}
           disabled={isLoading}
-          className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600 cursor-pointer disabled:opacity-50"
+          className={BUTTON.quiet}
           title="Refresh list"
+          aria-label="Refresh vendor list"
         >
-          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
-      {!isFirebaseConfigured && (
-        <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>Firebase is not configured — set the VITE_FIREBASE_* values to enable saving.</span>
-        </div>
-      )}
+      <div className="mb-4 space-y-2">
+        {!isFirebaseConfigured && (
+          <Notice tone="warn">
+            Cloud saving is off on this device, so this list stays here. Ask whoever set up
+            the app to finish the cloud setup to sync it across devices.
+          </Notice>
+        )}
 
-      {error && (
-        <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>Load failed: {error}</span>
-        </div>
-      )}
+        {error && (
+          <Notice tone="error">
+            Could not load the saved list: {error}. Check your connection and tap refresh —
+            anything you save now still lands on this device.
+          </Notice>
+        )}
 
-      {successMsg && (
-        <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>{successMsg}</span>
-        </div>
-      )}
+        {successMsg && (
+          <Notice tone="ok">{successMsg}</Notice>
+        )}
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-3.5" noValidate>
         <div>
-          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-            Name <span className="text-rose-500">*</span>
-          </label>
+          <label className={LABEL} htmlFor="vendor-name">Name <span className="text-[var(--color-danger)]">*</span></label>
           <div className="relative">
-            <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-ink-subtle" />
             <input
+              id="vendor-name"
               type="text"
               placeholder="e.g. Krishna Wholesalers"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className={`w-full pl-9 pr-3 py-2 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${fieldErrors.name ? 'border-rose-400' : 'border-slate-200'}`}
+              className={fieldClass(fieldErrors.name)}
             />
           </div>
-          {fieldErrors.name && <p className="text-[11px] text-rose-600 mt-1">{fieldErrors.name}</p>}
+          {fieldErrors.name && <p className={HINT}>{fieldErrors.name}</p>}
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-            GST No
-          </label>
+          <label className={LABEL} htmlFor="vendor-gst">GST No</label>
           <input
+            id="vendor-gst"
             type="text"
             placeholder="e.g. 29AABCU9603R1ZM"
             value={gstNo}
             onChange={(e) => setGstNo(e.target.value.toUpperCase())}
-            className={`w-full px-3 py-2 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${fieldErrors.gstNo ? 'border-rose-400' : 'border-slate-200'}`}
+            className={`${FIELD} num ${fieldErrors.gstNo ? 'ring-2 ring-[var(--color-danger)]/50' : ''}`}
           />
-          {fieldErrors.gstNo && <p className="text-[11px] text-rose-600 mt-1">{fieldErrors.gstNo}</p>}
+          {fieldErrors.gstNo && <p className={HINT}>{fieldErrors.gstNo}</p>}
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-            Phone Number
-          </label>
+          <label className={LABEL} htmlFor="vendor-phone">Phone number</label>
           <div className="relative">
-            <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <Phone className="absolute left-3 top-2.5 h-4 w-4 text-ink-subtle" />
             <input
+              id="vendor-phone"
               type="tel"
-              placeholder="e.g. +91 98765 43210"
+              placeholder="e.g. 98765 43210"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className={`w-full pl-9 pr-3 py-2 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${fieldErrors.phone ? 'border-rose-400' : 'border-slate-200'}`}
+              className={`${fieldClass(fieldErrors.phone)} num`}
             />
           </div>
-          {fieldErrors.phone && <p className="text-[11px] text-rose-600 mt-1">{fieldErrors.phone}</p>}
+          {fieldErrors.phone && <p className={HINT}>{fieldErrors.phone}</p>}
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Type</label>
+          <span className={LABEL}>Type</span>
           <div className="grid grid-cols-2 gap-2">
             {TYPE_OPTIONS.map(opt => (
               <button
                 key={opt.value}
                 type="button"
                 onClick={() => setType(opt.value)}
-                className={`py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                aria-pressed={type === opt.value}
+                className={`rounded-[var(--radius-control)] py-2 text-micro font-bold ring-1 transition-all cursor-pointer ${
                   type === opt.value
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    ? 'bg-[var(--color-brand)] text-white ring-[var(--color-brand)]'
+                    : 'bg-surface-2 text-ink-muted ring-hairline/70 hover:text-ink'
                 }`}
               >
                 {opt.label}
@@ -178,49 +199,51 @@ export default function VendorForm() {
         </div>
 
         {fieldErrors.form && (
-          <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{fieldErrors.form}</p>
+          <p role="alert" className={`rounded-[var(--radius-control)] px-3 py-2 text-micro ring-1 ${NOTICE.error}`}>
+            {fieldErrors.form}
+          </p>
         )}
 
         <button
           type="submit"
           disabled={isSaving || !isFirebaseConfigured}
-          className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] disabled:opacity-60 text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+          className={`${BUTTON.primary} w-full`}
         >
           {isSaving ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /><span>Saving...</span></>
+            <><Loader2 className="h-4 w-4 animate-spin" /><span>Saving…</span></>
           ) : (
-            <><Save className="w-4 h-4" /><span>Save Vendor / Client</span></>
+            <><Save className="h-4 w-4" /><span>Save vendor / client</span></>
           )}
         </button>
       </form>
 
       {/* Saved list — proof of persistence (fetched on mount) */}
-      <div className="mt-5 pt-4 border-t border-slate-100">
-        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-          Saved Vendors ({vendors.length})
+      <div className="mt-5 border-t border-hairline/60 pt-4">
+        <h3 className="mb-2 text-micro font-bold uppercase tracking-wide text-ink-muted">
+          Saved vendors ({vendors.length})
         </h3>
         {isLoading ? (
-          <p className="text-xs text-slate-400 py-3 text-center">Loading from Firebase...</p>
+          <p className="py-3 text-center text-micro text-ink-subtle">Loading from the cloud…</p>
         ) : vendors.length === 0 ? (
-          <p className="text-xs text-slate-400 py-3 text-center">No vendors saved yet</p>
+          <p className="py-3 text-center text-micro text-ink-subtle">
+            Nothing saved yet — add the first vendor above.
+          </p>
         ) : (
-          <ul className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+          <ul className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
             {vendors.map(v => (
-              <li key={v.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 text-xs">
+              <li key={v.id} className="flex items-center justify-between rounded-[var(--radius-control)] bg-surface-2 px-3 py-2 text-micro">
                 <div className="min-w-0">
-                  <span className="font-semibold text-slate-800 truncate block">{v.name}</span>
-                  <span className="text-slate-400">{v.phone || 'no phone'}{v.gst_no ? ` · ${v.gst_no}` : ''}</span>
+                  <span className="block truncate font-semibold text-ink">{v.name}</span>
+                  <span className="num text-ink-subtle">{v.phone || 'no phone'}{v.gst_no ? ` · ${v.gst_no}` : ''}</span>
                 </div>
-                <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ml-2 ${
-                  v.type === 'supplier' ? 'bg-purple-100 text-purple-700' : 'bg-indigo-100 text-indigo-700'
-                }`}>
+                <Badge tone={v.type === 'supplier' ? 'out' : 'brand'} className="ml-2 shrink-0">
                   {v.type}
-                </span>
+                </Badge>
               </li>
             ))}
           </ul>
         )}
       </div>
-    </div>
+    </Surface>
   );
 }

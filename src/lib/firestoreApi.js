@@ -82,7 +82,14 @@ function subscribeCollection(name, onData, { compare, onError } = {}) {
   const target = uid ? query(base, where('ownerId', '==', uid)) : base;
 
   const publish = (snap) => {
-    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // `synced` is per row and comes from the snapshot's own metadata, so a row
+    // only ever claims to be waiting while it really is: the report's status
+    // badge reads this instead of a document field nobody writes.
+    const rows = snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+      synced: !d.metadata.hasPendingWrites
+    }));
     if (compare) rows.sort(compare);
     const pending = snap.docs.filter((d) => d.metadata.hasPendingWrites).length;
     onData(rows, pending, snap.metadata.fromCache);
@@ -102,6 +109,8 @@ function subscribeCollection(name, onData, { compare, onError } = {}) {
     { includeMetadataChanges: true },
     (snap) => {
       publish(snap);
+      // A null message means "this read is healthy" — it clears an error a
+      // previous attempt reported. Only a real message is a failure.
       onError?.(null);
     },
     (err) => {

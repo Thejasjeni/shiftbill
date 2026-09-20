@@ -1,34 +1,28 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
-  Camera,
-  Plus,
-  Minus,
-  Trash2,
   Receipt,
   Printer,
   Share2,
   FileDown,
   CheckCircle2,
-  User,
   ShoppingBag,
-  ChevronDown,
-  Users
+  AlertTriangle
 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 import { useVendors } from '../../hooks/useVendors';
 import { DEFAULT_BUSINESS_INFO } from '../../data/businessProfile';
 import { computeBillTotals } from '../../utils/billTotals';
-import { stockState, stockOf } from '../../utils/stock';
-
-// Bill figures are shown to the paisa; the cart total itself stays whole rupees
-const inr = (value) => `₹${Number(value || 0).toLocaleString('en-IN', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2
-})}`;
+import { stockState } from '../../utils/stock';
 import { generateUpiQrCodeDataUrl, generateInvoicePdf, shareInvoiceOnWhatsApp, invoiceFileName } from '../../utils/posUtilities';
+import Money from '../ui/Money';
 import BarcodeScannerModal from './BarcodeScannerModal';
 import InvoiceDocument from './InvoiceDocument';
+// The sheet owns the bill; these own one piece of it each.
+import CustomerPicker from './checkout/CustomerPicker';
+import ItemChips from './checkout/ItemChips';
+import CartLine from './checkout/CartLine';
+import MoneyBlock from './checkout/MoneyBlock';
 
 // Demo inventory used until the merchant adds real items (stable identity,
 // defined at module scope so it doesn't break memoization below).
@@ -39,90 +33,15 @@ const FALLBACK_INVENTORY = [
 ];
 
 export default function CheckoutBottomSheet({ isOpen, onClose }) {
-  const { currentData, addSale, isFirebaseConfigured, businessInfo = {} } = useDashboard();
+  const { currentData, addSale, businessInfo = {} } = useDashboard();
   // Saved customers from the Firestore vendor registry (offline-safe: empty list
   // when unreachable — local parties below still work)
   const { vendors } = useVendors();
 
-  // Customer & Pricing Tier state
-  const [customerName, setCustomerName] = useState('Cash Customer');
+  // What the bill is written from (blank name bills as "Cash Customer")
+  const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [pricingTier, setPricingTier] = useState('retail'); // 'retail' or 'wholesale'
-
-  // Saved-customer picker state
-  const [isCustomerListOpen, setIsCustomerListOpen] = useState(false);
-  const [customerSearch, setCustomerSearch] = useState('');
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const customerListRef = useRef(null);
-
-  // Merge local parties + registry customers (deduped by name+phone)
-  const savedCustomers = useMemo(() => {
-    const partyCustomers = (currentData.parties || []).map(p => ({
-      key: `party-${p.id}`,
-      name: p.name,
-      phone: p.phone && p.phone !== '--' ? String(p.phone) : '',
-      source: 'Party'
-    }));
-    const registryCustomers = (vendors || [])
-      .filter(v => v.type === 'customer')
-      .map(v => ({
-        key: `vendor-${v.id}`,
-        name: v.name,
-        phone: v.phone ? String(v.phone) : '',
-        source: 'Registry'
-      }));
-    const seen = new Set();
-    return [...partyCustomers, ...registryCustomers].filter(c => {
-      if (!c.name) return false;
-      const k = `${c.name.toLowerCase()}|${c.phone}`;
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    });
-  }, [currentData.parties, vendors]);
-
-  const filteredCustomers = useMemo(() => {
-    const q = customerSearch.toLowerCase();
-    if (!q) return savedCustomers;
-    return savedCustomers.filter(c =>
-      c.name.toLowerCase().includes(q) || String(c.phone).includes(q)
-    );
-  }, [savedCustomers, customerSearch]);
-
-  // Close the customer dropdown on outside click / Escape
-  useEffect(() => {
-    if (!isCustomerListOpen) return;
-    const handlePointer = (e) => {
-      if (customerListRef.current && !customerListRef.current.contains(e.target)) {
-        setIsCustomerListOpen(false);
-      }
-    };
-    const handleKey = (e) => { if (e.key === 'Escape') setIsCustomerListOpen(false); };
-    document.addEventListener('mousedown', handlePointer);
-    document.addEventListener('touchstart', handlePointer);
-    document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('mousedown', handlePointer);
-      document.removeEventListener('touchstart', handlePointer);
-      document.removeEventListener('keydown', handleKey);
-    };
-  }, [isCustomerListOpen]);
-
-  const selectSavedCustomer = (c) => {
-    setCustomerName(c.name);
-    // Normalize to the 10-digit local format the WhatsApp field expects
-    const digits = String(c.phone || '').replace(/\D/g, '');
-    setCustomerPhone(digits.length >= 10 ? digits.slice(-10) : digits);
-    setSelectedCustomer(c);
-    setIsCustomerListOpen(false);
-    setCustomerSearch('');
-  };
-
-  const clearSelectedCustomer = () => {
-    setSelectedCustomer(null);
-    setCustomerName('');
-    setCustomerPhone('');
-  };
 
   // Cart line items (raw; display rates are derived from pricingTier below)
   const [rawCart, setCart] = useState([]);
@@ -132,6 +51,7 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
   const [completedInvoice, setCompletedInvoice] = useState(null);
   const [receiptQrUrl, setReceiptQrUrl] = useState(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState(null);
   // Available inventory list from context or offline cache
   // (fallback is a stable module-level constant so its identity never changes)
   const inventoryItems = currentData.items.length > 0 ? currentData.items : FALLBACK_INVENTORY;
@@ -157,6 +77,14 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
   // — from the same module the printed document and the PDF use.
   const bill = useMemo(() => computeBillTotals(cart, businessInfo), [cart, businessInfo]);
   const payableTotal = bill.total;
+
+  // Lines the catalogue says have no stock left. Derived from the bill itself,
+  // so the warning appears the moment the line is added and clears when it is
+  // removed — the seller still decides, it just isn't a surprise later.
+  const outOfStock = cart.filter((line) => {
+    const item = inventoryItems.find((i) => i.id === line.id);
+    return item && stockState(item) === 'out';
+  });
 
   // Dynamic merchant UPI ID & Business Info from Context (no QR without a VPA)
   const merchantUpiId = businessInfo.upiId || '';
@@ -186,12 +114,9 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
 
   // Add item to cart: store the item's own prices; the derived `cart`
   // recomputes rate/total from the current tier, so no manual math here.
-  // A zero-stock item is still billable (the count may be stale), but the
-  // seller hears it before the bill says so.
+  // A zero-stock item is still billable (the count may be stale) — the cart
+  // shows the warning above the save button instead of interrupting the sale.
   const addItemToCart = (item) => {
-    if (stockState(item) === 'out' && !item.id.startsWith('scanned-')) {
-      alert(`"${item.item_name || item.name}" is out of stock. Restock it from Items, or continue if the count is stale.`);
-    }
     setCart(prev => {
       const existing = prev.find(i => i.id === item.id);
       if (existing) {
@@ -256,11 +181,6 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
 
   // Complete checkout & record sale in Firestore (queued locally when offline)
   const handleCheckout = async () => {
-    if (cart.length === 0) {
-      alert("Please add at least one item to checkout");
-      return;
-    }
-
     const invoice = {
       id: `INV-${Math.floor(100000 + Math.random() * 900000)}`,
       date: new Date().toLocaleDateString('en-IN'),
@@ -290,7 +210,6 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
     setCart([]);
     setCustomerName('');
     setCustomerPhone('');
-    setSelectedCustomer(null);
     setPricingTier('retail');
   };
 
@@ -298,11 +217,13 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
   const handleDownloadPdf = async () => {
     if (!completedInvoice) return;
     setIsGeneratingPdf(true);
+    setPdfError(null);
     try {
       const doc = await generateInvoicePdf(completedInvoice, businessInfo);
       doc.save(`${invoiceFileName(completedInvoice, businessInfo)}.pdf`);
     } catch (e) {
       console.error(e);
+      setPdfError('Could not make the PDF. Try again, or print the bill instead.');
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -337,55 +258,56 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
       {/* Slide-Up Bottom Sheet Overlay */}
       <div
         onClick={onClose}
-        className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+        className="fixed inset-0 z-40 bg-scrim backdrop-blur-xs transition-opacity"
       />
 
-      <div className="print-sheet fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-3xl shadow-2xl flex flex-col max-h-[92vh] sm:max-w-xl sm:mx-auto transition-transform duration-300 animate-slideUp overflow-hidden">
+      <div className="print-sheet fixed inset-x-0 bottom-0 z-50 flex max-h-[92vh] flex-col overflow-hidden rounded-t-[22px] bg-surface shadow-e3 sm:mx-auto sm:max-w-xl animate-slideUp">
         {/* Drag handle */}
-        <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mt-2.5 mb-1 cursor-grab"></div>
+        <div className="mx-auto mb-1 mt-2.5 h-1.5 w-12 cursor-grab rounded-full bg-surface-3"></div>
 
         {/* Sheet Header */}
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center justify-between border-b border-hairline/70 px-4 py-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-xs">
-              <ShoppingBag className="w-4 h-4" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] bg-[var(--color-brand)] text-white shadow-e1">
+              <ShoppingBag className="h-4 w-4" />
             </div>
             <div className="text-left">
-              <h2 className="font-bold text-base text-slate-900 leading-tight">
-                {isCompleted ? 'Invoice Generated' : 'Mobile POS Checkout'}
+              <h2 className="text-title font-bold leading-tight text-ink">
+                {isCompleted ? 'Bill saved' : 'Take a bill'}
               </h2>
-              <span className="text-[11px] text-slate-500">
+              <span className="num text-micro text-ink-muted">
                 {isCompleted ? completedInvoice?.id : 'Tap items, take payment, save the bill'}
               </span>
             </div>
           </div>
           <button
             onClick={isCompleted ? handleReset : onClose}
-            className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+            aria-label={isCompleted ? 'Close and start a new bill' : 'Close checkout'}
+            className="rounded-full p-1.5 text-ink-subtle transition-colors hover:bg-surface-2 hover:text-ink cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Sheet Content Body */}
-        <div className="print-sheet-body p-4 overflow-y-auto flex-1 text-left space-y-4">
+        <div className="print-sheet-body flex-1 space-y-4 overflow-y-auto p-4 text-left">
           {isCompleted ? (
             /* THE BILL: confirmation chrome on screen, invoice document on paper */
             <div className="space-y-4">
               <div className="text-center">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
-                  <CheckCircle2 className="w-7 h-7 stroke-[2.5]" />
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-brand)]/10 text-[var(--color-in)]">
+                  <CheckCircle2 className="h-7 w-7 stroke-[2.5]" />
                 </div>
-                <h3 className="text-lg font-black text-slate-900 mt-2">
-                  ₹{Number(completedInvoice.amount).toLocaleString('en-IN')} Paid
+                <h3 className="mt-2 text-title font-black text-ink">
+                  <Money value={completedInvoice.amount} /> paid
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Billed to <strong>{completedInvoice.party_name}</strong> ({completedInvoice.pricing_tier} tier)
+                <p className="mt-0.5 text-micro text-ink-muted">
+                  Billed to <strong className="text-ink">{completedInvoice.party_name}</strong> · {completedInvoice.pricing_tier} price list
                 </p>
               </div>
 
               {/* The invoice document — .print-area is what reaches paper */}
-              <div className="print-area overflow-hidden rounded-2xl border border-slate-200">
+              <div className="print-area overflow-hidden rounded-[var(--radius-card)] ring-1 ring-hairline/70">
                 <InvoiceDocument
                   invoice={completedInvoice}
                   business={businessInfo}
@@ -397,351 +319,120 @@ export default function CheckoutBottomSheet({ isOpen, onClose }) {
               <div className="space-y-2.5 pt-1">
                 <button
                   onClick={handleWhatsAppShare}
-                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95"
+                  className="flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-in)] py-3 text-body font-bold text-white shadow-e2 transition-transform hover:opacity-95 active:scale-[0.98] cursor-pointer"
                 >
-                  <Share2 className="w-4 h-4" />
-                  <span>Send Bill on WhatsApp</span>
+                  <Share2 className="h-4 w-4" />
+                  <span>Send bill on WhatsApp</span>
                 </button>
 
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={handleDownloadPdf}
                     disabled={isGeneratingPdf}
-                    className="py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] bg-surface py-2.5 text-micro font-semibold text-ink ring-1 ring-hairline/70 transition-colors hover:bg-surface-2 disabled:opacity-60 cursor-pointer"
                   >
-                    <FileDown className="w-4 h-4 text-indigo-600" />
-                    <span>{isGeneratingPdf ? 'Generating...' : 'Download PDF'}</span>
+                    <FileDown className="h-4 w-4 text-[var(--color-brand)]" />
+                    <span>{isGeneratingPdf ? 'Generating…' : 'Download PDF'}</span>
                   </button>
 
                   <button
                     onClick={handleThermalPrint}
-                    className="py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] bg-surface py-2.5 text-micro font-semibold text-ink ring-1 ring-hairline/70 transition-colors hover:bg-surface-2 cursor-pointer"
                   >
-                    <Printer className="w-4 h-4 text-slate-600" />
-                    <span>Print Bill</span>
+                    <Printer className="h-4 w-4 text-ink-muted" />
+                    <span>Print bill</span>
                   </button>
                 </div>
 
+                {pdfError && (
+                  <p
+                    role="alert"
+                    className="flex items-start gap-2 rounded-[var(--radius-control)] bg-[var(--color-danger)]/10 px-3 py-2 text-micro text-[var(--color-danger)] ring-1 ring-[var(--color-danger)]/25"
+                  >
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>{pdfError}</span>
+                  </p>
+                )}
+
                 <button
                   onClick={handleReset}
-                  className="w-full py-2.5 text-xs text-indigo-600 font-bold hover:underline cursor-pointer"
+                  className="w-full py-2.5 text-micro font-bold text-[var(--color-brand)] hover:underline cursor-pointer"
                 >
-                  + New Bill
+                  + New bill
                 </button>
               </div>
             </div>
           ) : (
             /* ACTIVE CART & CHECKOUT FORM */
             <>
-              {/* Customer Profile & Dual Pricing Tier Selector */}
-              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Customer Profile</span>
-                  </span>
+              <CustomerPicker
+                parties={currentData.parties}
+                vendors={vendors}
+                name={customerName}
+                phone={customerPhone}
+                onNameChange={setCustomerName}
+                onPhoneChange={setCustomerPhone}
+                tier={pricingTier}
+                onTierChange={setPricingTier}
+              />
 
-                  {/* Dual Pricing Toggle Button */}
-                  <div className="flex items-center bg-white p-0.5 rounded-xl border border-slate-200 shadow-2xs">
-                    <button
-                      type="button"
-                      onClick={() => setPricingTier('retail')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        pricingTier === 'retail'
-                          ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      Retail
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPricingTier('wholesale')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        pricingTier === 'wholesale'
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      Wholesale
-                    </button>
-                  </div>
-                </div>
+              <ItemChips
+                items={inventoryItems}
+                tier={pricingTier}
+                onAdd={addItemToCart}
+                onScan={() => setIsScannerOpen(true)}
+              />
 
-                {/* Saved-customer picker: one tap instead of typing */}
-                <div className="relative" ref={customerListRef}>
-                  <button
-                    type="button"
-                    onClick={() => setIsCustomerListOpen(o => !o)}
-                    aria-haspopup="listbox"
-                    aria-expanded={isCustomerListOpen}
-                    className="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 text-xs font-medium hover:border-indigo-300 transition-colors cursor-pointer"
-                  >
-                    <span className="flex items-center gap-1.5 min-w-0">
-                      <Users className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                      {selectedCustomer ? (
-                        <span className="truncate">
-                          <span className="font-bold text-slate-800">{selectedCustomer.name}</span>
-                          {selectedCustomer.phone && <span className="text-slate-400"> · {selectedCustomer.phone}</span>}
-                        </span>
-                      ) : (
-                        <span className="text-slate-500">Select saved customer (Parties / Registry)</span>
-                      )}
-                    </span>
-                    {selectedCustomer ? (
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => { e.stopPropagation(); clearSelectedCustomer(); }}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); clearSelectedCustomer(); } }}
-                        className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 shrink-0 cursor-pointer"
-                        aria-label="Clear selected customer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </span>
-                    ) : (
-                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isCustomerListOpen ? 'rotate-180' : ''}`} />
-                    )}
-                  </button>
-
-                  {isCustomerListOpen && (
-                    <div className="absolute left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-30">
-                      <div className="px-2 pb-1">
-                        <input
-                          type="text"
-                          autoFocus
-                          placeholder="Search customers..."
-                          value={customerSearch}
-                          onChange={(e) => setCustomerSearch(e.target.value)}
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                        />
-                      </div>
-                      <div className="max-h-44 overflow-y-auto">
-                        {filteredCustomers.length === 0 ? (
-                          <p className="px-3 py-3 text-[11px] text-slate-400 text-center">
-                            No saved customers found — add one in Parties or the Vendor Registry.
-                          </p>
-                        ) : (
-                          filteredCustomers.map(c => (
-                            <button
-                              key={c.key}
-                              type="button"
-                              onClick={() => selectSavedCustomer(c)}
-                              className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-indigo-50 transition-colors cursor-pointer ${
-                                selectedCustomer?.key === c.key ? 'bg-indigo-50/60' : ''
-                              }`}
-                            >
-                              <span className="flex items-center gap-2 min-w-0">
-                                <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span className="min-w-0">
-                                  <span className="block text-xs font-semibold text-slate-800 truncate">{c.name}</span>
-                                  {c.phone && <span className="block text-[10px] text-slate-400">{c.phone}</span>}
-                                </span>
-                              </span>
-                              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">
-                                {c.source}
-                              </span>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Manual entry (pre-filled when a saved customer is picked) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    placeholder="Customer Name (e.g. Rahul Traders)"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="px-3 py-1.5 bg-white rounded-xl border border-slate-200 text-xs font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                  />
-                  <input
-                    type="tel"
-                    placeholder="WhatsApp Phone (10 digits)"
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    className="px-3 py-1.5 bg-white rounded-xl border border-slate-200 text-xs font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Quick Item Addition & Barcode Trigger */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    Add Items to Bill
-                  </span>
-                  <button
-                    onClick={() => setIsScannerOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer"
-                  >
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>Scan Barcode</span>
-                  </button>
-                </div>
-
-                {/* Horizontal Quick Item Chips */}
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {inventoryItems.map(item => {
-                    const price = pricingTier === 'wholesale'
-                      ? (item.wholesale_price || item.retail_price * 0.85)
-                      : (item.retail_price || item.price);
-
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => addItemToCart(item)}
-                        className="px-3 py-2 bg-white border border-slate-200 hover:border-indigo-300 rounded-xl text-left shrink-0 shadow-2xs transition-all active:scale-95 cursor-pointer"
-                      >
-                        <div className="font-bold text-xs text-slate-800 truncate max-w-[130px]">
-                          {item.item_name || item.name}
-                        </div>
-                        {stockState(item) !== 'ok' && (
-                          <div className={`text-[10px] font-bold ${stockState(item) === 'out' ? 'text-rose-600' : 'text-amber-600'}`}>
-                            {stockState(item) === 'out' ? 'Out of stock' : `Low · ${stockOf(item)} left`}
-                          </div>
-                        )}
-                        <div className="text-[11px] font-extrabold text-emerald-600 mt-0.5">
-                          ₹{price.toFixed(0)}{' '}
-                          <span className="text-[10px] text-slate-400 font-normal">
-                            ({pricingTier})
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Cart Line Items Table */}
-              <div className="border border-slate-200/90 rounded-2xl overflow-hidden bg-white shadow-2xs">
-                <div className="bg-slate-50 px-3 py-2 border-b border-slate-200/80 text-[11px] font-bold text-slate-500 uppercase flex justify-between">
-                  <span>Item Description</span>
-                  <span>Qty & Subtotal</span>
+              {/* The bill's lines — each row is a CartLine; the sheet owns the list */}
+              <div className="overflow-hidden rounded-[var(--radius-card)] bg-surface ring-1 ring-hairline/70">
+                <div className="flex justify-between border-b border-hairline/70 bg-surface-2 px-3 py-2 text-micro font-bold uppercase text-ink-muted">
+                  <span>Item</span>
+                  <span>Qty & amount</span>
                 </div>
 
                 {cart.length === 0 ? (
-                  <div className="p-6 text-center text-slate-400 text-xs">
-                    Your cart is empty. Scan an item barcode or tap items above.
-                  </div>
+                  <p className="p-6 text-center text-micro text-ink-subtle">
+                    Your cart is empty — scan a barcode or tap an item above.
+                  </p>
                 ) : (
-                  <div className="divide-y divide-slate-100">
-                    {cart.map(item => (
-                      <div key={item.id} className="p-3 flex items-center justify-between">
-                        <div className="min-w-0 pr-2">
-                          <div className="text-xs font-bold text-slate-900 truncate">
-                            {item.name}
-                          </div>
-                          <div className="text-[11px] text-slate-400 mt-0.5">
-                            ₹{item.rate} each
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => removeCartItem(item.id)}
-                          className="text-slate-300 hover:text-rose-600 transition-colors cursor-pointer mr-1"
-                          aria-label={`Remove ${item.name} from cart`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Quantity Stepper */}
-                        <div className="flex items-center gap-3 shrink-0">
-                          <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
-                            <button
-                              onClick={() => updateQty(item.id, -1)}
-                              className="px-2 py-1 hover:bg-slate-200 text-slate-600 transition-colors"
-                            >
-                              <Minus className="w-3 h-3" />
-                            </button>
-                            <span className="px-2.5 text-xs font-bold text-slate-800">
-                              {item.quantity}
-                            </span>
-                            <button
-                              onClick={() => updateQty(item.id, 1)}
-                              className="px-2 py-1 hover:bg-slate-200 text-slate-600 transition-colors"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </button>
-                          </div>
-
-                          <div className="text-right min-w-[60px]">
-                            <span className="text-xs font-extrabold text-slate-900">
-                              ₹{item.total.toFixed(0)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                  <div className="divide-y divide-hairline/70">
+                    {cart.map((item) => (
+                      <CartLine
+                        key={item.id}
+                        item={item}
+                        onQty={updateQty}
+                        onRemove={removeCartItem}
+                      />
                     ))}
                   </div>
                 )}
               </div>
 
-              {/* Bill money block & UPI QR preview */}
-              {payableTotal > 0 && (
-                <div className="p-3 rounded-2xl bg-indigo-50/60 border border-indigo-100">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1 space-y-0.5 text-[11px] text-indigo-900/80">
-                      <div className="flex items-center justify-between gap-4">
-                        <span>Sub Total</span>
-                        <span className="font-semibold">{inr(bill.subtotal)}</span>
-                      </div>
-                      {bill.discount > 0 && (
-                        <div className="flex items-center justify-between gap-4">
-                          <span>Discount ({bill.discountPercent}%)</span>
-                          <span className="font-semibold text-rose-600">(−) {inr(bill.discount)}</span>
-                        </div>
-                      )}
-                      {bill.tax > 0 && (
-                        <div className="flex items-center justify-between gap-4">
-                          <span>GST @ {bill.taxRate}% (included)</span>
-                          <span className="font-semibold">{inr(bill.tax)}</span>
-                        </div>
-                      )}
-                      {bill.roundOff !== 0 && (
-                        <div className="flex items-center justify-between gap-4">
-                          <span>Round Off</span>
-                          <span className="font-semibold">{bill.roundOff > 0 ? '+' : '−'} {inr(Math.abs(bill.roundOff))}</span>
-                        </div>
-                      )}
-                    </div>
+              <MoneyBlock bill={bill} total={payableTotal} qrUrl={upiQrUrl} />
 
-                    <div className="text-right shrink-0">
-                      <div className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider">
-                        Total
-                      </div>
-                      <div className="text-xl font-black text-indigo-950">
-                        ₹{payableTotal.toLocaleString('en-IN')}
-                      </div>
-                    </div>
-                  </div>
-
-                  {upiQrUrl && (
-                    <div className="mt-2.5 pt-2.5 border-t border-indigo-100/80 flex items-center gap-2">
-                      <img
-                        src={upiQrUrl}
-                        alt="UPI Preview"
-                        className="w-12 h-12 rounded-lg border border-indigo-200 bg-white p-0.5"
-                      />
-                      <div className="text-[10px] text-slate-500 text-left">
-                        <span className="font-bold text-indigo-700 block">UPI Ready</span>
-                        <span>Auto ₹{payableTotal}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
+              {outOfStock.length > 0 && (
+                <p
+                  role="status"
+                  className="flex items-start gap-2 rounded-[var(--radius-control)] bg-[var(--color-warn)]/10 px-3 py-2 text-micro text-[var(--color-warn)] ring-1 ring-[var(--color-warn)]/25"
+                >
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    {outOfStock.map((line) => line.name).join(', ')}{' '}
+                    {outOfStock.length === 1 ? 'is' : 'are'} out of stock — restock it in
+                    Items, or bill it anyway if the count is stale.
+                  </span>
+                </p>
               )}
 
               {/* Checkout Action Button */}
               <button
                 disabled={cart.length === 0}
                 onClick={handleCheckout}
-                className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm sm:text-base shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2"
+                className="flex w-full items-center justify-center gap-2 rounded-[var(--radius-card)] bg-[var(--color-in)] py-3.5 text-body font-bold text-white shadow-e2 transition-all hover:opacity-95 active:scale-[0.99] disabled:opacity-45 cursor-pointer"
               >
-                <Receipt className="w-4 h-4" />
-                <span>Save Bill & Generate Invoice (₹{payableTotal})</span>
+                <Receipt className="h-4 w-4" />
+                <span>Save bill &amp; make invoice</span>
+                {payableTotal > 0 && <Money value={payableTotal} className="text-white" />}
               </button>
             </>
           )}

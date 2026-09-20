@@ -11,7 +11,7 @@ import NewSaleModal from './components/modals/NewSaleModal';
 import NewPurchaseModal from './components/modals/NewPurchaseModal';
 import NewExpenseModal from './components/modals/NewExpenseModal';
 import ReportViewerModal from './components/modals/ReportViewerModal';
-import SearchDrawer from './components/modals/SearchDrawer';
+import CommandPalette from './components/CommandPalette';
 import CheckoutBottomSheet from './components/pos/CheckoutBottomSheet';
 import PartiesView from './components/views/PartiesView';
 import ItemsView from './components/views/ItemsView';
@@ -35,16 +35,16 @@ class ErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-[#1E1B4B] text-white flex items-center justify-center p-6 text-left">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
+        <div className="flex min-h-screen items-center justify-center bg-[var(--color-brand-deep)] p-6 text-left text-white">
+          <div className="w-full max-w-md space-y-4 rounded-[var(--radius-card)] bg-surface p-6 text-ink shadow-e3 ring-1 ring-hairline/70">
             <div className="flex items-center gap-3">
-              <img src="/logo.png" alt="SwiftBill" className="w-10 h-10 rounded-xl" />
+              <img src="/logo.png" alt="SwiftBill" className="h-10 w-10 rounded-[var(--radius-control)]" />
               <div>
-                <h1 className="font-bold text-lg text-white">SwiftBill Recovered</h1>
-                <p className="text-xs text-slate-400">An unexpected error was intercepted safely</p>
+                <h1 className="text-title font-bold text-ink">Something went wrong</h1>
+                <p className="text-micro text-ink-muted">Your books are safe — reload to carry on billing.</p>
               </div>
             </div>
-            <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-xl text-xs text-rose-300 font-mono break-words">
+            <div className="break-words rounded-[var(--radius-control)] bg-[var(--color-danger)]/10 p-3 text-micro text-[var(--color-danger)] ring-1 ring-[var(--color-danger)]/25">
               {this.state.error?.toString()}
             </div>
             <button
@@ -52,9 +52,9 @@ class ErrorBoundary extends Component {
                 localStorage.clear();
                 window.location.reload();
               }}
-              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 font-bold text-white text-xs rounded-xl transition-all cursor-pointer"
+              className="w-full rounded-[var(--radius-control)] bg-[var(--color-brand)] py-2.5 text-body font-bold text-white transition-opacity hover:opacity-90 cursor-pointer"
             >
-              Reset Cache & Reload App
+              Clear local data &amp; reload
             </button>
           </div>
         </div>
@@ -105,7 +105,7 @@ function DashboardContent() {
   };
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#F8F9FA]">
+    <div className="flex h-screen w-full overflow-hidden bg-canvas">
       {/* Desktop Navigation Sidebar / Collapsible Mobile Drawer */}
       <Sidebar />
 
@@ -115,7 +115,7 @@ function DashboardContent() {
         <TopAppBar />
 
         {/* Scrollable Dashboard Body */}
-        <main className="flex-1 overflow-y-auto p-3.5 sm:p-6 pb-28 lg:pb-12 max-w-7xl w-full mx-auto">
+        <main className="mx-auto w-full max-w-7xl flex-1 overflow-y-auto p-3.5 pb-28 sm:p-6 lg:pb-12">
           {renderActiveView()}
         </main>
 
@@ -127,7 +127,7 @@ function DashboardContent() {
         <NewPurchaseModal />
         <NewExpenseModal />
         <ReportViewerModal />
-        <SearchDrawer />
+        <CommandPalette />
         <CheckoutBottomSheet
           isOpen={isCheckoutOpen}
           onClose={() => setIsCheckoutOpen(false)}

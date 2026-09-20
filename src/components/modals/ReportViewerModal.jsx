@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { X, Download, Printer, Search, FileText, ArrowDownLeft, ArrowUpRight, CheckCircle2, Clock, Trash2 } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
+import { formatINR } from '../../utils/money';
+import Badge from '../ui/Badge';
+import EmptyState from '../ui/EmptyState';
+import Money from '../ui/Money';
+import { BUTTON, DIALOG, FIELD } from '../ui/controls';
 
 export default function ReportViewerModal() {
   const { activeReportModal, setActiveReportModal, currentData, deleteTransaction } = useDashboard();
@@ -9,14 +14,6 @@ export default function ReportViewerModal() {
 
   if (!activeReportModal) return null;
 
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(val || 0);
-  };
-
   const partyOf = (tx) => tx.party_name || tx.partyName || (tx.type === 'sale' ? 'Cash Customer' : 'Supplier');
   const dateOf = (tx) => (tx.created_at ? new Date(tx.created_at) : null);
   const paymentOf = (tx) => tx.payment_mode || tx.paymentMethod || 'Cash';
@@ -24,7 +21,7 @@ export default function ReportViewerModal() {
   // Delete a transaction row (sale = receivable, purchase = payable)
   const handleDelete = async (tx) => {
     const label = tx.type === 'sale' ? 'receivable entry' : 'payable entry';
-    if (!window.confirm(`Delete this ${label} of ${formatCurrency(tx.amount)} for ${partyOf(tx)}? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete this ${label} of ${formatINR(tx.amount)} for ${partyOf(tx)}? This cannot be undone.`)) return;
 
     setDeletingId(tx.id);
     const res = await deleteTransaction(tx.id);
@@ -59,8 +56,7 @@ export default function ReportViewerModal() {
     const csv = rows
       .map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
       .join('\n');
-
-    const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -71,94 +67,93 @@ export default function ReportViewerModal() {
     URL.revokeObjectURL(url);
   };
 
+  // The card itself is the .print-area: the screen version and the printed
+  // version are the same document, so only one layout can drift.
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4 animate-fadeIn"
-      onClick={() => setActiveReportModal(null)}
-    >
+    <div className={DIALOG.overlay} onClick={() => setActiveReportModal(null)}>
       <div
-        className="print-area bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+        className="print-area flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-[var(--radius-card)] bg-surface shadow-e3 ring-1 ring-hairline/70"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-[#1E1B4B] text-white px-4 sm:px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 bg-[var(--color-brand-deep)] px-4 py-4 text-white sm:px-6">
           <div>
             <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-indigo-400" />
-              <h3 className="font-bold text-base sm:text-lg">{activeReportModal.title}</h3>
+              <FileText className={DIALOG.icon} />
+              <h3 className="text-title font-bold">{activeReportModal.title}</h3>
             </div>
-            <p className="text-xs text-slate-300 mt-0.5">
-              {new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })} • Live Ledger
+            <p className="mt-0.5 text-micro text-white/70">
+              {new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })} · your live ledger
             </p>
           </div>
           <button
             onClick={() => setActiveReportModal(null)}
-            className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+            className={DIALOG.close}
+            aria-label="Close report"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Toolbar: Search, Filter, Export */}
-        <div className="p-3 sm:p-4 border-b border-slate-100 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2.5">
-          <div className="relative flex-1 min-w-[180px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+        {/* Toolbar: Search, Export, Print — screen only, never on paper */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-hairline/60 bg-surface-2/70 p-3 sm:p-4">
+          <div className="relative min-w-[180px] flex-1">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-ink-subtle" />
             <input
               type="text"
-              placeholder="Search by party or invoice ID..."
+              placeholder="Search by party or bill number…"
+              aria-label="Search this report"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs sm:text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className={`${FIELD} pl-9`}
             />
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleExportCsv}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export</span>
+            <button onClick={handleExportCsv} className={BUTTON.secondary}>
+              <Download className="h-3.5 w-3.5" />
+              <span>Export CSV</span>
             </button>
-            <button
-              onClick={() => window.print()}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs cursor-pointer"
-            >
-              <Printer className="w-3.5 h-3.5" />
+            <button onClick={() => window.print()} className={BUTTON.primary}>
+              <Printer className="h-3.5 w-3.5" />
               <span>Print</span>
             </button>
           </div>
         </div>
 
         {/* Report Content Body */}
-        <div className="p-3 sm:p-5 overflow-y-auto flex-1 text-left">
-          {/* Summary Mini Cards */}
-          <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4 text-center">
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-              <div className="text-[10px] sm:text-xs text-slate-500 uppercase font-semibold">Total Records</div>
-              <div className="text-sm sm:text-base font-bold text-slate-800 mt-0.5">{filteredTransactions.length}</div>
+        <div className="flex-1 overflow-y-auto p-3 text-left sm:p-5">
+          {/* Summary tiles */}
+          <div className="mb-4 grid grid-cols-3 gap-2 text-center sm:gap-3">
+            <div className="rounded-[var(--radius-control)] bg-surface-2 px-2.5 py-2 ring-1 ring-hairline/60">
+              <div className="text-micro font-semibold uppercase text-ink-muted">Entries</div>
+              <div className="num mt-0.5 text-body font-bold text-ink">{filteredTransactions.length}</div>
             </div>
-            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
-              <div className="text-[10px] sm:text-xs text-emerald-700 uppercase font-semibold">Sales Total</div>
-              <div className="text-sm sm:text-base font-bold text-emerald-700 mt-0.5">
-                {formatCurrency(filteredTransactions.filter(t => t.type === 'sale').reduce((s, t) => s + Number(t.amount || 0), 0))}
-              </div>
+            <div className="rounded-[var(--radius-control)] bg-[var(--color-in)]/8 px-2.5 py-2 ring-1 ring-[var(--color-in)]/20">
+              <div className="text-micro font-semibold uppercase text-[var(--color-in)]">Sales</div>
+              <Money
+                value={filteredTransactions.filter(t => t.type === 'sale').reduce((s, t) => s + Number(t.amount || 0), 0)}
+                tone="in"
+                className="mt-0.5 text-body font-bold"
+              />
             </div>
-            <div className="p-2.5 rounded-xl bg-purple-50 border border-purple-100">
-              <div className="text-[10px] sm:text-xs text-purple-700 uppercase font-semibold">Payables Due</div>
-              <div className="text-sm sm:text-base font-bold text-purple-700 mt-0.5">
-                {formatCurrency(filteredTransactions.filter(t => t.type === 'purchase').reduce((s, t) => s + Number(t.amount || 0), 0))}
-              </div>
+            <div className="rounded-[var(--radius-control)] bg-[var(--color-out)]/8 px-2.5 py-2 ring-1 ring-[var(--color-out)]/20">
+              <div className="text-micro font-semibold uppercase text-[var(--color-out)]">Payables due</div>
+              <Money
+                value={filteredTransactions.filter(t => t.type === 'purchase').reduce((s, t) => s + Number(t.amount || 0), 0)}
+                tone="out"
+                className="mt-0.5 text-body font-bold"
+              />
             </div>
           </div>
 
           {/* List or Table */}
           {filteredTransactions.length === 0 ? (
-            <div className="py-12 text-center text-slate-400">
-              <FileText className="w-10 h-10 mx-auto text-slate-300 stroke-1" />
-              <p className="text-sm font-semibold text-slate-600 mt-2">No matching transactions found</p>
-              <p className="text-xs text-slate-400">Try adjusting your search terms or add a new invoice.</p>
-            </div>
+            <EmptyState
+              icon={FileText}
+              title="No matching entries"
+              hint="Try a different name or bill number, or record a sale to fill this report."
+            />
           ) : (
             <div className="space-y-2">
               {filteredTransactions.map((tx) => {
@@ -167,47 +162,50 @@ export default function ReportViewerModal() {
                 return (
                   <div
                     key={tx.id}
-                    className="p-3 rounded-xl border border-slate-100 hover:border-slate-200 bg-white hover:bg-slate-50/50 flex items-center justify-between gap-2 transition-all shadow-2xs"
+                    className="flex items-center justify-between gap-2 rounded-[var(--radius-control)] bg-surface p-3 ring-1 ring-hairline/60 transition-colors hover:bg-surface-2/60"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        isSale ? 'bg-emerald-50 text-emerald-600' : 'bg-purple-50 text-purple-600'
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className={`grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-control)] ${
+                        isSale ? 'bg-[var(--color-in)]/10 text-[var(--color-in)]' : 'bg-[var(--color-out)]/10 text-[var(--color-out)]'
                       }`}>
-                        {isSale ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+                        {isSale ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-xs sm:text-sm text-slate-800">{partyOf(tx)}</span>
-                          <span className="text-[10px] px-1.5 rounded bg-slate-100 text-slate-600 font-mono font-bold">
+                          <span className="truncate text-body font-semibold text-ink">{partyOf(tx)}</span>
+                          <span className="num shrink-0 rounded bg-surface-2 px-1.5 text-micro font-bold text-ink-muted">
                             {String(tx.id).slice(0, 12)}
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          {d ? d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'} • {paymentOf(tx)}
+                        <div className="num mt-0.5 text-micro text-ink-subtle">
+                          {d ? d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'} · {paymentOf(tx)}
                         </div>
                       </div>
                     </div>
 
-                    <div className="text-right flex items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2 text-right">
                       <div>
-                        <div className={`font-bold text-xs sm:text-sm ${isSale ? 'text-emerald-600' : 'text-slate-800'}`}>
-                          {isSale ? '+' : '-'}{formatCurrency(tx.amount)}
+                        <Money
+                          value={isSale ? tx.amount : -tx.amount}
+                          tone={isSale ? 'in' : 'out'}
+                          signed
+                          className="text-body font-bold"
+                        />
+                        <div className="mt-0.5 flex justify-end">
+                          <Badge tone={tx.synced ? 'in' : 'warn'}>
+                            {tx.synced ? <CheckCircle2 className="h-2.5 w-2.5" /> : <Clock className="h-2.5 w-2.5" />}
+                            {tx.synced ? 'Synced' : 'Pending sync'}
+                          </Badge>
                         </div>
-                        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.2 rounded ${
-                          tx.synced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {tx.synced ? <CheckCircle2 className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
-                          {tx.synced ? 'Synced' : 'Pending sync'}
-                        </span>
                       </div>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDelete(tx); }}
                         disabled={deletingId === tx.id}
                         title="Delete entry"
                         aria-label={`Delete transaction ${String(tx.id).slice(0, 8)}`}
-                        className="p-1.5 rounded-lg text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-wait shrink-0"
+                        className="shrink-0 rounded-[var(--radius-control)] p-1.5 text-ink-subtle transition-colors hover:bg-[var(--color-danger)]/10 hover:text-[var(--color-danger)] disabled:cursor-wait disabled:opacity-50 cursor-pointer"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </div>
@@ -218,12 +216,9 @@ export default function ReportViewerModal() {
         </div>
 
         {/* Footer */}
-        <div className="p-3 sm:p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end">
-          <button
-            onClick={() => setActiveReportModal(null)}
-            className="px-4 py-2 rounded-xl bg-slate-800 text-white text-xs font-semibold hover:bg-slate-900 transition-colors"
-          >
-            Close Report
+        <div className="flex items-center justify-end border-t border-hairline/60 bg-surface-2 p-3 sm:p-4">
+          <button onClick={() => setActiveReportModal(null)} className={BUTTON.secondary}>
+            Close report
           </button>
         </div>
       </div>
