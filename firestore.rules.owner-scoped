@@ -5,35 +5,66 @@ rules_version = '2';
 //
 // This is the ruleset the app needs once Google sign-in is live: every
 // document carries an `ownerId`, and only the signed-in owner can read or
-// write it. It is staged in this file rather than released, because releasing
-// it before anyone can sign in would lock every existing document away.
+// write it.
 //
-// Verified with the Firebase Rules testing API — which can simulate incoming
-// writes and auth, but NOT an existing stored document:
+// !! RELEASING THIS FILE IS A CUTOVER, NOT A DROP-IN !!  Raising it ends the
+// app's signed-out mode outright: with these rules live, every read and every
+// write from a device with nobody signed in is refused — the ledger and the
+// shared settings/businessProfile alike — and the documents written before
+// sign-in existed are unreadable until they are stamped with their owner's uid
+// out of band. Deploying it by accident leaves the app with no data and no way
+// back except a revert. The two prerequisites, and the requests that prove
+// them, are under "To go live" below; until they are met, firestore.rules (the
+// live file) stays exactly as it is.
 //
-//   create with the caller's own uid ................. allowed
-//   create with no ownerId ........................... denied
-//   create stamped with someone else's uid ........... denied
-//   anonymous create / read / update / delete ......... denied  (every collection)
+// Evidence, not assumption. The Firebase Rules testing API cannot verify this
+// file: it reports an error for any request whose rules touch `resource`, and
+// it does not populate `request.resource` for writes, so a create the rules
+// allow comes back as a failure. Everything below was measured in the
+// Firestore emulator instead — two instances, real requests, one unsigned
+// token per account, the admin token only for seeding — which is how a later
+// reader can rebuild it:
 //
-// NOT yet exercised: the read and legacy-claim branches, which depend on the
-// stored document's ownerId. Those must be proven against the live database
-// with a signed-in user before this file is released.
+//   signed-out read, list or write of the ledger or the shared profile ... 403
+//   create stamped with the caller's own uid ............................ 200
+//   create with no ownerId, or with another account's uid ............... 403
+//   owner reads, updates, deletes its own document ...................... 200
+//   another account reads, overwrites, deletes it ....................... 403
+//   an unconstrained collection list .................................... 403
+//   the ownerId-filtered list the app issues ................. 200, own rows only
+//
+// Running it that way found three holes in this file's first draft, all fixed
+// here: the legacy arms never matched (`unclaimed()`), a document-independent
+// arm in a read rule made unconstrained lists legal and returned every
+// account's rows, and an update that omitted ownerId orphaned the document
+// so another account could adopt it (`keepsOwner()`).
 //
 // To go live: rename over firestore.rules (or point firebase.json at it), then
-// `firebase deploy --only firestore:rules`. The app already stamps ownerId on
-// every write and filters every query by it; the business profile is addressed
-// per account (settings/<uid>) for the same reason.
+// `firebase deploy --only firestore:rules`. Two things must happen first, both
+// proven in the emulator rather than assumed:
+//
+//   1. Every document that predates sign-in must be stamped with its owner's
+//      uid OUT OF BAND, with the Admin SDK. Reads here are strict: they allow
+//      only documents whose ownerId is the caller's uid, which is what makes
+//      them safe as queries. A whole pre-sign-in ledger is therefore
+//      invisible until it is stamped.
+//   2. Raising the ruleset ends the app's signed-out mode completely: every
+//      read and write, the ledger and the shared profile alike, answers 403
+//      without a signed-in user. That is the point of the ruleset, but it is a
+//      switch, not a drop-in — the app must require sign-in in the same
+//      release.
+//
+// Both were measured in the Firestore emulator, not reasoned about.
 
 // The `resource == null` arm on /settings reads is what lets a first sign-in
 // read its own (not yet existing) profile and then seed it. That a missing
-// document really is a null resource was confirmed against the live project:
-// a temporary path whose only grant was `allow read: if resource == null`
-// answered an anonymous read of a nonexistent document with 404 (document not
-// found), where a path with no rule at all answers 403. The arm is therefore
-// sound as a mechanism, but this ruleset under a real sign-in is still staged,
-// not proven — the Rules testing API cannot help, since it reports an error for
-// any request whose rules touch `resource`.
+// document really is a null resource was confirmed twice: against the live
+// project, where a temporary path granted only `allow read: if resource == null`
+// answered an anonymous read of a nonexistent document with 404 where a path
+// with no rule at all answers 403, and in the emulator, where the same read
+// returns 404 for the signed-in account rather than a denial. It is also the
+// only arm a read rule here may carry that a real document cannot satisfy, so
+// it cannot widen a list.
 // ============================================================================
 
 service cloud.firestore {
@@ -48,6 +79,22 @@ service cloud.firestore {
       return signedIn() && resource.data.ownerId == request.auth.uid;
     }
 
+    // A document written before ownership existed — it carries no ownerId at
+    // all. `!('ownerId' in resource.data)` is the only way to ask: reading a
+    // field that is not there is an ERROR in the rules language, not null, so
+    // the obvious `resource.data.ownerId == null` is never true. Verified in
+    // the emulator: same document, same request, `== null` denies (403) and
+    // the `in` test allows (200).
+    //
+    // It is used by the adoption write ONLY. As a read rule it is a hole: an
+    // arm that any document can satisfy makes an unconstrained collection query
+    // legal, and Firestore does not filter a list result by the rules — the
+    // emulator returned every account's rows (200, including another owner's)
+    // where the strict rule below answers 403.
+    function unclaimed() {
+      return signedIn() && !('ownerId' in resource.data);
+    }
+
     // First write by the owner: the document carries their uid.
     function stampedByCaller() {
       return signedIn() && request.resource.data.ownerId == request.auth.uid;
@@ -55,29 +102,41 @@ service cloud.firestore {
 
     // Adopting a legacy document that predates ownership (ownerId is absent).
     function claimingLegacyDoc() {
-      return signedIn()
-        && resource.data.ownerId == null
-        && request.resource.data.ownerId == request.auth.uid;
+      return unclaimed() && request.resource.data.ownerId == request.auth.uid;
     }
 
+    // An update of an owned document must leave it owned by the same account.
+    // Without this, an update that simply omits ownerId turns the document into
+    // an unclaimed one: the owner can no longer read it (403) and any other
+    // signed-in account can adopt it (200, measured in the emulator). Omitting
+    // a field is not a mistake the rules can afford to ignore here.
+    function keepsOwner() {
+      return request.resource.data.ownerId == request.auth.uid;
+    }
+
+    // Reads are ownership only, in every collection: the condition is on the
+    // document's own ownerId, so a query has to carry the matching filter (the
+    // app's subscriptions all do) and an unconstrained one is refused. `update`
+    // keeps claimingLegacyDoc(), which is how a caller that knows a legacy
+    // document's id adopts it — a write, so nothing leaks through a list.
     match /transactions/{doc} {
-      allow read: if owned() || claimingLegacyDoc() || (signedIn() && resource.data.ownerId == null);
+      allow read: if owned();
       allow create: if stampedByCaller();
-      allow update: if owned() || claimingLegacyDoc();
+      allow update: if (owned() && keepsOwner()) || claimingLegacyDoc();
       allow delete: if owned();
     }
 
     match /inventory/{doc} {
-      allow read: if owned() || claimingLegacyDoc() || (signedIn() && resource.data.ownerId == null);
+      allow read: if owned();
       allow create: if stampedByCaller();
-      allow update: if owned() || claimingLegacyDoc();
+      allow update: if (owned() && keepsOwner()) || claimingLegacyDoc();
       allow delete: if owned();
     }
 
     match /vendors/{doc} {
-      allow read: if owned() || claimingLegacyDoc() || (signedIn() && resource.data.ownerId == null);
+      allow read: if owned();
       allow create: if stampedByCaller();
-      allow update: if owned() || claimingLegacyDoc();
+      allow update: if (owned() && keepsOwner()) || claimingLegacyDoc();
       allow delete: if owned();
     }
 
@@ -86,16 +145,16 @@ service cloud.firestore {
     // treatment as the ledger, so releasing this ruleset can't lock the shop's
     // own settings away.
     //
-    // Reads here also cover the document NOT existing yet: the app gets the
-    // profile before it writes one, and rules see a missing document as a null
-    // resource, so the null case must come first — without it a first sign-in
-    // could never seed its own profile.
+    // `resource == null` covers the document NOT existing yet — the app reads
+    // the profile before it writes one, and a missing document is a null
+    // resource, so without this arm a first sign-in could never seed its own
+    // profile. It is also the one arm a read rule may carry that no real
+    // document can satisfy, so it cannot widen a list the way `unclaimed()`
+    // did.
     match /settings/{doc} {
-      allow read: if signedIn() && (
-        resource == null || owned() || claimingLegacyDoc() || resource.data.ownerId == null
-      );
+      allow read: if signedIn() && (resource == null || owned());
       allow create: if stampedByCaller();
-      allow update: if owned() || claimingLegacyDoc();
+      allow update: if (owned() && keepsOwner()) || claimingLegacyDoc();
       allow delete: if owned();
     }
   }
