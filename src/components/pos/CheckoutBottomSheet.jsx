@@ -24,10 +24,9 @@ import ItemChips from './checkout/ItemChips';
 import CartLine from './checkout/CartLine';
 import MoneyBlock from './checkout/MoneyBlock';
 
-// Demo inventory used until the merchant adds real items (stable identity,
-// defined at module scope so it doesn't break memoization below).
-// Stable identities: the cart memo depends on this list, so neither case may
-// hand it a fresh array on every render.
+// Demo inventory used until the merchant adds real items. Both are module-level
+// constants because the cart memo depends on them: neither case may hand it a
+// fresh array on every render.
 const NO_ITEMS = [];
 const FALLBACK_INVENTORY = [
   { id: '1', item_name: 'Basmati Rice Premium 5kg', retail_price: 550, wholesale_price: 470, barcode: '8901234567890', stock: 45 },

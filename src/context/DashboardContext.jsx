@@ -97,6 +97,11 @@ export function DashboardProvider({ children }) {
     let pendingItems = 0;
     const publishPending = () => setPendingSyncCount(pendingTx + pendingItems);
 
+    // Signing in or out re-scopes this read, so the catalog is unknown again —
+    // without this the previous scope's answer would stand in for the new one,
+    // and the demo list would stand in for a catalog nobody has read.
+    setIsCatalogueLoaded(!isFirebaseConfigured);
+
     const unsubTransactions = subscribeTransactions((rows, pending, fromCache) => {
       pendingTx = pending;
       publishPending();
