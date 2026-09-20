@@ -12,7 +12,7 @@ import {
   normalizeItemForUI,
   claimUnownedDocuments
 } from '../lib/firestoreApi';
-import { useAuthUser, signInWithGoogle, signOutOwner } from '../lib/auth';
+import { useAuthUser, signOutOwner } from '../lib/auth';
 import {
   buildSalesTimeline, summarizeTimeline, previousRangeTotals, DEFAULT_RANGE
 } from '../utils/salesTimeline';
@@ -50,6 +50,7 @@ export function DashboardProvider({ children }) {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAddSaleOpen, setIsAddSaleOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false); // Slide-up Checkout Bottom Sheet
+  const [isSignInOpen, setIsSignInOpen] = useState(false);
   const [isAddPurchaseOpen, setIsAddPurchaseOpen] = useState(false);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [activeReportModal, setActiveReportModal] = useState(null);
@@ -361,6 +362,8 @@ export function DashboardProvider({ children }) {
   };
 
   const value = {
+    isSignInOpen,
+    setIsSignInOpen,
     salesTimeRange,
     setSalesTimeRange,
     isMobileDrawerOpen,
@@ -398,9 +401,9 @@ export function DashboardProvider({ children }) {
     isOnline,
     pendingSyncCount,
     manualSync,
-    // Accounts (optional — the app works signed out)
+    // Accounts (optional — the app works signed out). The sign-in surface in
+    // components/modals/SignInModal owns the signing-in itself.
     user,
-    signIn: signInWithGoogle,
     signOut: signOutOwner
   };
 

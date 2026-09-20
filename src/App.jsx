@@ -11,6 +11,7 @@ import NewSaleModal from './components/modals/NewSaleModal';
 import NewPurchaseModal from './components/modals/NewPurchaseModal';
 import NewExpenseModal from './components/modals/NewExpenseModal';
 import ReportViewerModal from './components/modals/ReportViewerModal';
+import SignInModal from './components/modals/SignInModal';
 import CommandPalette from './components/CommandPalette';
 import CheckoutBottomSheet from './components/pos/CheckoutBottomSheet';
 import PartiesView from './components/views/PartiesView';
@@ -127,6 +128,7 @@ function DashboardContent() {
         <NewPurchaseModal />
         <NewExpenseModal />
         <ReportViewerModal />
+        <SignInModal />
         <CommandPalette />
         <CheckoutBottomSheet
           isOpen={isCheckoutOpen}

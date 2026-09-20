@@ -1,5 +1,21 @@
 {
   "firestore": {
     "rules": "firestore.rules"
+  },
+  "auth": {
+    "authorizedDomains": [
+      "localhost",
+      "127.0.0.1",
+      "agencies-web.firebaseapp.com",
+      "agencies-web.web.app",
+      "swiftbill-dashboard.vercel.app"
+    ],
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "SwiftBill",
+        "supportEmail": "thejasjeni123@gmail.com"
+      }
+    }
   }
 }
