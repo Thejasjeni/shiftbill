@@ -141,8 +141,10 @@ export function DashboardProvider({ children }) {
     };
   }, [user?.uid]);
 
-  // 2. The stored business profile. Signing in or out re-scopes the read, so
-  // this follows the account like the collections do.
+  // 2. The business profile of whoever is using the app: an account's own
+  // document when signed in, the shared one while signed out. Signing in or out
+  // moves the read to the other document, exactly as it re-scopes the
+  // collections.
   useEffect(() => {
     if (!isFirebaseConfigured) return undefined;
     return subscribeBusinessProfile((profile, pending, fromCache) => {
@@ -151,11 +153,12 @@ export function DashboardProvider({ children }) {
         if (!profileEdited.current) setBusinessInfoState(normalizeProfile(profile));
         return;
       }
-      // Nothing stored yet, and only the backend's own answer counts as that:
-      // hand this device's configured profile over once, so an upgrade doesn't
-      // leave the shop's identity stranded in one browser. A profile still on
-      // its defaults is not handed over — a fresh browser must never seed the
-      // store ahead of the device that actually has the shop's details.
+      // This account (or this unsigned-in device) has nothing stored yet, and
+      // only the backend's own answer counts as that: hand the profile this
+      // device is carrying over once, so a sign-in or an upgrade doesn't leave
+      // the shop's identity stranded in one browser. A profile still on its
+      // defaults is not handed over — a fresh browser must never seed the store
+      // ahead of the device that actually has the shop's details.
       if (fromCache || profileEdited.current) return;
       const local = readLocalProfile();
       if (isCustomizedProfile(local)) saveBusinessProfile(local);

@@ -34,8 +34,9 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // One document holds the shop's own identity (name, GSTIN, UPI id, the
-    // bill's discount and tax rates) — see settings/businessProfile.
+    // The business profile: the shop's own identity (name, GSTIN, UPI id, and
+    // the bill's discount and tax rates). One document per account —
+    // settings/<uid> — and the shared settings/businessProfile while signed out.
     match /settings/{doc} {
       allow read, write: if true;
     }

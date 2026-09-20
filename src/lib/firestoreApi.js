@@ -6,7 +6,6 @@ import {
   updateDoc,
   increment,
   onSnapshot,
-  getDoc,
   getDocFromCache,
   getDocs,
   getDocsFromCache,
@@ -19,12 +18,12 @@ import { db, isFirebaseConfigured } from './firebaseClient';
 import { ownerOf } from './auth';
 
 // ---------------------------------------------------------------------------
-// Firestore data layer — owns the app's three collections and its one
-// settings document:
+// Firestore data layer — owns the app's three collections and its settings:
 //   transactions : one document per sale / purchase / expense
 //   inventory    : the product catalog (also the POS item list)
 //   vendors      : clients and suppliers
-//   settings     : single documents, today the business profile
+//   settings     : the business profile — one document per account when signed
+//                  in, the shared one below when there is nobody to key it to
 //
 // Offline-first comes from Firestore itself (see firebaseClient): every write
 // below is applied to the local cache immediately and replayed automatically
@@ -36,8 +35,16 @@ export const INVENTORY = 'inventory';
 export const VENDORS = 'vendors';
 export const SETTINGS = 'settings';
 
-// One shop, one profile — so it is a document, not a row in a collection.
-export const BUSINESS_PROFILE_DOC = 'businessProfile';
+// One shop, one profile — so it is a document, not a row in a collection. It is
+// addressed by owner: each account keeps its profile at its own uid, so one
+// shop's identity can never sit on another account's path (which is what the
+// owner-scoped rules would otherwise refuse to hand back), and a device with no
+// account keeps the one document this app has always used.
+export const SIGNED_OUT_BUSINESS_PROFILE = 'businessProfile';
+
+function businessProfileDoc() {
+  return doc(db, SETTINGS, ownerOf() || SIGNED_OUT_BUSINESS_PROFILE);
+}
 
 function assertConfigured() {
   if (!isFirebaseConfigured || !db) {
@@ -153,16 +160,11 @@ export function subscribeVendors(onData, onError) {
   return subscribeCollection(VENDORS, onData, { compare: byCreatedAtDesc, onError });
 }
 
-// Live view of a single settings document. Same contract as the collections —
+// Live view of one settings document whose path its caller has already checked
+// there is a backend for. Same contract as the collections —
 // `onData(data, pendingWrites, fromCache)` with `data` null until one exists —
 // so callers can tell "nothing saved yet" from "the answer hasn't arrived".
-function subscribeDocument(name, id, onData, onError) {
-  if (!isFirebaseConfigured || !db) {
-    onData(null, 0, true);
-    return () => {};
-  }
-
-  const ref = doc(db, name, id);
+function subscribeDocument(ref, onData, onError) {
   const publish = (snap) => onData(
     snap.exists() ? snap.data() : null,
     snap.metadata.hasPendingWrites ? 1 : 0,
@@ -181,14 +183,20 @@ function subscribeDocument(name, id, onData, onError) {
       onError?.(null);
     },
     (err) => {
-      console.warn(`Firestore "${name}/${id}" listener:`, err.message);
-      onError?.(err.message || `Could not read "${name}"`);
+      console.warn(`Firestore "${ref.path}" listener:`, err.message);
+      onError?.(err.message || `Could not read "${ref.path}"`);
     }
   );
 }
 
+// The account's own profile, or the shared one while signed out. The path is
+// resolved per subscription, so signing in or out follows the account.
 export function subscribeBusinessProfile(onData, onError) {
-  return subscribeDocument(SETTINGS, BUSINESS_PROFILE_DOC, onData, onError);
+  if (!isFirebaseConfigured || !db) {
+    onData(null, 0, true);
+    return () => {};
+  }
+  return subscribeDocument(businessProfileDoc(), onData, onError);
 }
 
 // ---- Transactions ----
@@ -290,13 +298,14 @@ export function insertVendor(vendor) {
 
 // ---- Settings ----
 
-// Save the business profile. Merged, so a field an older profile shape doesn't
-// carry is left as it was rather than wiped. Queues offline like any write;
-// resolves with a failure message, or null once the backend has it.
+// Save the business profile to the owner's own document. Merged, so a field an
+// older profile shape doesn't carry is left as it was rather than wiped.
+// Queues offline like any write; resolves with a failure message, or null once
+// the backend has it.
 export function saveBusinessProfile(profile) {
   assertConfigured();
   return commit(
-    setDoc(doc(db, SETTINGS, BUSINESS_PROFILE_DOC), owned(profile), { merge: true }),
+    setDoc(businessProfileDoc(), owned(profile), { merge: true }),
     'Business profile'
   );
 }
@@ -324,16 +333,6 @@ export async function claimUnownedDocuments(uid) {
       await batch.commit();
       claimed += Math.min(400, orphans.length - i);
     }
-  }
-
-  // The business profile is a single document rather than a collection, so it
-  // is adopted on its own — it would otherwise be the one record the
-  // owner-scoped rules could lock away.
-  const profileRef = doc(db, SETTINGS, BUSINESS_PROFILE_DOC);
-  const profile = await getDoc(profileRef);
-  if (profile.exists() && !profile.data().ownerId) {
-    await setDoc(profileRef, { ownerId: uid }, { merge: true });
-    claimed += 1;
   }
 
   return claimed;

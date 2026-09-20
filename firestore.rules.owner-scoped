@@ -20,10 +20,20 @@ rules_version = '2';
 // stored document's ownerId. Those must be proven against the live database
 // with a signed-in user before this file is released.
 //
-// To go live: rename over firestore.rules (or point firebase.json at it), make
-// every write stamp ownerId and every query filter on it, then
-// `firebase deploy --only firestore:rules`. Until the app does both, this
-// ruleset would deny the app its own data.
+// To go live: rename over firestore.rules (or point firebase.json at it), then
+// `firebase deploy --only firestore:rules`. The app already stamps ownerId on
+// every write and filters every query by it; the business profile is addressed
+// per account (settings/<uid>) for the same reason.
+
+// The `resource == null` arm on /settings reads is what lets a first sign-in
+// read its own (not yet existing) profile and then seed it. That a missing
+// document really is a null resource was confirmed against the live project:
+// a temporary path whose only grant was `allow read: if resource == null`
+// answered an anonymous read of a nonexistent document with 404 (document not
+// found), where a path with no rule at all answers 403. The arm is therefore
+// sound as a mechanism, but this ruleset under a real sign-in is still staged,
+// not proven — the Rules testing API cannot help, since it reports an error for
+// any request whose rules touch `resource`.
 // ============================================================================
 
 service cloud.firestore {
@@ -71,10 +81,19 @@ service cloud.firestore {
       allow delete: if owned();
     }
 
-    // The shop's own profile (settings/businessProfile) — same treatment as the
-    // ledger, so releasing this ruleset can't lock the business settings away.
+    // The business profile — one document per account, keyed by the owner's
+    // uid, plus the shared document a device with no account writes. Same
+    // treatment as the ledger, so releasing this ruleset can't lock the shop's
+    // own settings away.
+    //
+    // Reads here also cover the document NOT existing yet: the app gets the
+    // profile before it writes one, and rules see a missing document as a null
+    // resource, so the null case must come first — without it a first sign-in
+    // could never seed its own profile.
     match /settings/{doc} {
-      allow read: if owned() || claimingLegacyDoc() || (signedIn() && resource.data.ownerId == null);
+      allow read: if signedIn() && (
+        resource == null || owned() || claimingLegacyDoc() || resource.data.ownerId == null
+      );
       allow create: if stampedByCaller();
       allow update: if owned() || claimingLegacyDoc();
       allow delete: if owned();
