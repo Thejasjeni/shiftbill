@@ -1,9 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { enableNetwork } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../lib/firebaseClient';
 import {
   subscribeTransactions,
   subscribeInventory,
+  subscribeBusinessProfile,
+  saveBusinessProfile,
   addTransaction,
   deleteTransaction as deleteTransactionDoc,
   saveInventoryItem,
@@ -15,13 +17,25 @@ import {
   buildSalesTimeline, summarizeTimeline, previousRangeTotals, DEFAULT_RANGE
 } from '../utils/salesTimeline';
 import { countLowStock } from '../utils/stock';
-import { DEFAULT_BUSINESS_INFO } from '../data/businessProfile';
+import { normalizeProfile, isCustomizedProfile } from '../data/businessProfile';
 
 const DashboardContext = createContext();
 
-// The old shipped placeholder, kept here only so an upgraded install stops
-// billing under the app's own name (see the loader below)
-const PLACEHOLDER_BUSINESS_NAME = 'SwiftBill Store';
+const BUSINESS_PROFILE_KEY = 'swiftbill_business_info';
+
+// How long typing must pause before the profile is written back. One write per
+// edit session instead of one per keystroke.
+const PROFILE_SAVE_DELAY = 600;
+
+// The profile this device already has. Devices that predate the store only hold
+// it here, so this is what gets handed over the first time one connects.
+function readLocalProfile() {
+  try {
+    const saved = localStorage.getItem(BUSINESS_PROFILE_KEY);
+    if (saved) return normalizeProfile(JSON.parse(saved));
+  } catch { /* ignore corrupt cache */ }
+  return normalizeProfile(null);
+}
 
 export function DashboardProvider({ children }) {
   // Sign-in is optional: signed out (or before the project has an auth
@@ -56,21 +70,16 @@ export function DashboardProvider({ children }) {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
 
-  // Business profile state (persisted locally so edits survive reloads)
-  const [businessInfo, setBusinessInfo] = useState(() => {
-    try {
-      const saved = localStorage.getItem('swiftbill_business_info');
-      if (saved) {
-        const profile = JSON.parse(saved);
-        // The app used to default the business name to its own name; that was
-        // never a real choice, so fall back to the current default instead of
-        // printing it on bills. Everything the user entered is kept.
-        if (profile.name === PLACEHOLDER_BUSINESS_NAME) delete profile.name;
-        return { ...DEFAULT_BUSINESS_INFO, ...profile };
-      }
-    } catch { /* ignore corrupt cache */ }
-    return DEFAULT_BUSINESS_INFO;
-  });
+  // Business profile. The Firestore document is the source of truth; the local
+  // copy is what a device with no backend prints from, and what paints the
+  // bill instantly on the way to the stored answer.
+  const [businessInfo, setBusinessInfoState] = useState(readLocalProfile);
+  // Has this device edited the profile since it loaded? A stored profile that
+  // arrives afterwards must not overwrite what someone is typing.
+  const profileEdited = useRef(false);
+  // Where the last edit stands: null until there is one to report.
+  const [profileSaveState, setProfileSaveState] = useState(null);
+  const [profileSaveError, setProfileSaveError] = useState(null);
 
   const [parties, setParties] = useState(() => {
     try {
@@ -82,7 +91,7 @@ export function DashboardProvider({ children }) {
 
   // Persist local-only collections when they change
   useEffect(() => {
-    try { localStorage.setItem('swiftbill_business_info', JSON.stringify(businessInfo)); } catch { /* ignore */ }
+    try { localStorage.setItem(BUSINESS_PROFILE_KEY, JSON.stringify(businessInfo)); } catch { /* ignore */ }
   }, [businessInfo]);
   useEffect(() => {
     try { localStorage.setItem('swiftbill_parties', JSON.stringify(parties)); } catch { /* ignore */ }
@@ -131,6 +140,57 @@ export function DashboardProvider({ children }) {
       window.removeEventListener('offline', handleOffline);
     };
   }, [user?.uid]);
+
+  // 2. The stored business profile. Signing in or out re-scopes the read, so
+  // this follows the account like the collections do.
+  useEffect(() => {
+    if (!isFirebaseConfigured) return undefined;
+    return subscribeBusinessProfile((profile, pending, fromCache) => {
+      if (profile) {
+        // The stored profile wins, unless this device edited it since loading.
+        if (!profileEdited.current) setBusinessInfoState(normalizeProfile(profile));
+        return;
+      }
+      // Nothing stored yet, and only the backend's own answer counts as that:
+      // hand this device's configured profile over once, so an upgrade doesn't
+      // leave the shop's identity stranded in one browser. A profile still on
+      // its defaults is not handed over — a fresh browser must never seed the
+      // store ahead of the device that actually has the shop's details.
+      if (fromCache || profileEdited.current) return;
+      const local = readLocalProfile();
+      if (isCustomizedProfile(local)) saveBusinessProfile(local);
+    });
+  }, [user?.uid]);
+
+  // Settings edits apply to the bill at once — the money block reads this state
+  // — and persist shortly after typing stops. The write reaches Firestore's own
+  // queue, so it lands once the backend is reachable even if that is later.
+  const profileTimer = useRef(null);
+  const profileWrite = useRef(0);
+  const setBusinessInfo = useCallback((next) => {
+    profileEdited.current = true;
+    setBusinessInfoState(next);
+
+    if (!isFirebaseConfigured) {
+      setProfileSaveState('device');
+      return;
+    }
+
+    setProfileSaveState('saving');
+    setProfileSaveError(null);
+    const write = ++profileWrite.current;
+    clearTimeout(profileTimer.current);
+    profileTimer.current = setTimeout(() => {
+      // A later edit owns the status by then, so only the newest write reports.
+      saveBusinessProfile(next).then((message) => {
+        if (profileWrite.current !== write) return;
+        setProfileSaveState(message ? 'error' : 'saved');
+        setProfileSaveError(message);
+      });
+    }, PROFILE_SAVE_DELAY);
+  }, []);
+
+  useEffect(() => () => clearTimeout(profileTimer.current), []);
 
   // Adopt the ledger written before sign-in existed the first time someone
   // signs in, so releasing the owner-scoped rules can't lock it away.
@@ -318,6 +378,8 @@ export function DashboardProvider({ children }) {
     setActiveNavTab,
     businessInfo,
     setBusinessInfo,
+    profileSaveState,
+    profileSaveError,
     currentData,
     addSale,
     addPurchase,

@@ -11,10 +11,10 @@ rules_version = '2';
 // There is deliberately no catch-all `match /{document=**}`: Firestore already
 // denies every path no rule matches, so one would only be redundant. (An
 // earlier version of this file carried `allow read, write: if false` on a
-// wildcard; the Rules testing API shows it did NOT block these three
-// collections — matching rules are combined, and a grant wins — so removing it
-// was a clean-up, not a fix. See firestore.rules.owner-scoped for the target
-// state once sign-in is live.)
+// wildcard; the Rules testing API shows it did NOT block these collections —
+// matching rules are combined, and a grant wins — so removing it was a
+// clean-up, not a fix. See firestore.rules.owner-scoped for the target state
+// once sign-in is live.)
 //
 // Deploy with:  firebase deploy --only firestore:rules
 // ============================================================================
@@ -31,6 +31,12 @@ service cloud.firestore {
     }
 
     match /vendors/{doc} {
+      allow read, write: if true;
+    }
+
+    // One document holds the shop's own identity (name, GSTIN, UPI id, the
+    // bill's discount and tax rates) — see settings/businessProfile.
+    match /settings/{doc} {
       allow read, write: if true;
     }
   }

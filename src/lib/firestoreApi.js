@@ -6,6 +6,8 @@ import {
   updateDoc,
   increment,
   onSnapshot,
+  getDoc,
+  getDocFromCache,
   getDocs,
   getDocsFromCache,
   query,
@@ -17,10 +19,12 @@ import { db, isFirebaseConfigured } from './firebaseClient';
 import { ownerOf } from './auth';
 
 // ---------------------------------------------------------------------------
-// Firestore data layer — owns the app's three collections:
+// Firestore data layer — owns the app's three collections and its one
+// settings document:
 //   transactions : one document per sale / purchase / expense
 //   inventory    : the product catalog (also the POS item list)
 //   vendors      : clients and suppliers
+//   settings     : single documents, today the business profile
 //
 // Offline-first comes from Firestore itself (see firebaseClient): every write
 // below is applied to the local cache immediately and replayed automatically
@@ -30,6 +34,10 @@ import { ownerOf } from './auth';
 export const TRANSACTIONS = 'transactions';
 export const INVENTORY = 'inventory';
 export const VENDORS = 'vendors';
+export const SETTINGS = 'settings';
+
+// One shop, one profile — so it is a document, not a row in a collection.
+export const BUSINESS_PROFILE_DOC = 'businessProfile';
 
 function assertConfigured() {
   if (!isFirebaseConfigured || !db) {
@@ -44,9 +52,17 @@ function assertConfigured() {
 // a checkout until the network came back. The write itself is committed to the
 // durable local cache the moment it is issued, and Firestore replays it on its
 // own, so the local commit is what this app treats as success. Anything that
-// still fails (rules, bad data) is reported instead of blocking the seller.
+// still fails (rules, bad data) is reported instead of blocking the seller;
+// the promise settles with that message, or null when the write went through,
+// for the caller that has to tell the user (settings saves do).
 function commit(write, what) {
-  write.catch((err) => console.warn(`${what} could not be saved:`, err.message));
+  return write.then(
+    () => null,
+    (err) => {
+      console.warn(`${what} could not be saved:`, err.message);
+      return err.message;
+    }
+  );
 }
 
 // Ownership: a document carries its writer's uid, which is what lets the
@@ -135,6 +151,44 @@ export function subscribeInventory(onData, onError) {
 
 export function subscribeVendors(onData, onError) {
   return subscribeCollection(VENDORS, onData, { compare: byCreatedAtDesc, onError });
+}
+
+// Live view of a single settings document. Same contract as the collections —
+// `onData(data, pendingWrites, fromCache)` with `data` null until one exists —
+// so callers can tell "nothing saved yet" from "the answer hasn't arrived".
+function subscribeDocument(name, id, onData, onError) {
+  if (!isFirebaseConfigured || !db) {
+    onData(null, 0, true);
+    return () => {};
+  }
+
+  const ref = doc(db, name, id);
+  const publish = (snap) => onData(
+    snap.exists() ? snap.data() : null,
+    snap.metadata.hasPendingWrites ? 1 : 0,
+    snap.metadata.fromCache
+  );
+
+  // The local cache answers first (instantly, even offline) so Settings shows
+  // the saved profile without waiting on the network.
+  getDocFromCache(ref).then(publish).catch(() => {});
+
+  return onSnapshot(
+    ref,
+    { includeMetadataChanges: true },
+    (snap) => {
+      publish(snap);
+      onError?.(null);
+    },
+    (err) => {
+      console.warn(`Firestore "${name}/${id}" listener:`, err.message);
+      onError?.(err.message || `Could not read "${name}"`);
+    }
+  );
+}
+
+export function subscribeBusinessProfile(onData, onError) {
+  return subscribeDocument(SETTINGS, BUSINESS_PROFILE_DOC, onData, onError);
 }
 
 // ---- Transactions ----
@@ -234,6 +288,19 @@ export function insertVendor(vendor) {
   return { id: ref.id, ...stored };
 }
 
+// ---- Settings ----
+
+// Save the business profile. Merged, so a field an older profile shape doesn't
+// carry is left as it was rather than wiped. Queues offline like any write;
+// resolves with a failure message, or null once the backend has it.
+export function saveBusinessProfile(profile) {
+  assertConfigured();
+  return commit(
+    setDoc(doc(db, SETTINGS, BUSINESS_PROFILE_DOC), owned(profile), { merge: true }),
+    'Business profile'
+  );
+}
+
 // ---- Ownership ----
 
 // One-time adoption of the ledger written before sign-in existed: every
@@ -258,5 +325,16 @@ export async function claimUnownedDocuments(uid) {
       claimed += Math.min(400, orphans.length - i);
     }
   }
+
+  // The business profile is a single document rather than a collection, so it
+  // is adopted on its own — it would otherwise be the one record the
+  // owner-scoped rules could lock away.
+  const profileRef = doc(db, SETTINGS, BUSINESS_PROFILE_DOC);
+  const profile = await getDoc(profileRef);
+  if (profile.exists() && !profile.data().ownerId) {
+    await setDoc(profileRef, { ownerId: uid }, { merge: true });
+    claimed += 1;
+  }
+
   return claimed;
 }

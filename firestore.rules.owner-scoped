@@ -14,7 +14,7 @@ rules_version = '2';
 //   create with the caller's own uid ................. allowed
 //   create with no ownerId ........................... denied
 //   create stamped with someone else's uid ........... denied
-//   anonymous create / read / update / delete ......... denied  (all three collections)
+//   anonymous create / read / update / delete ......... denied  (every collection)
 //
 // NOT yet exercised: the read and legacy-claim branches, which depend on the
 // stored document's ownerId. Those must be proven against the live database
@@ -65,6 +65,15 @@ service cloud.firestore {
     }
 
     match /vendors/{doc} {
+      allow read: if owned() || claimingLegacyDoc() || (signedIn() && resource.data.ownerId == null);
+      allow create: if stampedByCaller();
+      allow update: if owned() || claimingLegacyDoc();
+      allow delete: if owned();
+    }
+
+    // The shop's own profile (settings/businessProfile) — same treatment as the
+    // ledger, so releasing this ruleset can't lock the business settings away.
+    match /settings/{doc} {
       allow read: if owned() || claimingLegacyDoc() || (signedIn() && resource.data.ownerId == null);
       allow create: if stampedByCaller();
       allow update: if owned() || claimingLegacyDoc();

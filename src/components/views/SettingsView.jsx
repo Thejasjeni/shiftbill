@@ -4,14 +4,25 @@ import { useDashboard } from '../../context/DashboardContext';
 import Surface from '../ui/Surface';
 import { FIELD, LABEL, HINT } from '../ui/controls';
 
+// What the profile form says about the edit just made. Nothing is shown until
+// there is one, so the form opens without a status it hasn't earned.
+const SAVE_STATUS = {
+  saving: { text: 'Saving…', tone: 'text-ink-subtle' },
+  saved: { text: 'Saved to your account', tone: 'text-[var(--color-in)]' },
+  device: { text: 'Saved on this device', tone: 'text-ink-subtle' },
+  error: { text: 'Not saved', tone: 'text-[var(--color-danger)]' }
+};
+
 export default function SettingsView() {
-  const { businessInfo, setBusinessInfo } = useDashboard();
+  const { businessInfo, setBusinessInfo, profileSaveState, profileSaveError } = useDashboard();
 
   // One updater for every field, so a new setting is one line in the markup.
   const set = (key) => (e) => {
     const value = e.target.type === 'number' ? Number(e.target.value) || 0 : e.target.value;
     setBusinessInfo({ ...businessInfo, [key]: value });
   };
+
+  const saveStatus = SAVE_STATUS[profileSaveState];
 
   return (
     <div className="max-w-3xl space-y-4 text-left">
@@ -24,10 +35,18 @@ export default function SettingsView() {
 
       {/* Business Details Form */}
       <Surface className="space-y-4">
-        <h2 className="flex items-center gap-2 text-body font-bold uppercase tracking-wider text-ink">
-          <Building2 className="h-4 w-4 text-[var(--color-brand)]" />
-          <span>Business profile</span>
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <h2 className="flex items-center gap-2 text-body font-bold uppercase tracking-wider text-ink">
+            <Building2 className="h-4 w-4 text-[var(--color-brand)]" />
+            <span>Business profile</span>
+          </h2>
+          {saveStatus && (
+            <p aria-live="polite" className={`text-micro font-bold ${saveStatus.tone}`}>
+              {saveStatus.text}
+              {profileSaveError && ` — ${profileSaveError}`}
+            </p>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
