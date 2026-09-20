@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, ShoppingCart, IndianRupee, Building, Loader2, Package } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 import { useProducts } from '../../hooks/useProducts';
+import { useVendors } from '../../hooks/useVendors';
 import SearchableProductSelect from '../ui/SearchableProductSelect';
 import { incrementStock } from '../../lib/firestoreApi';
 import { BUTTON, DIALOG, FIELD, HINT, LABEL } from '../ui/controls';
@@ -9,6 +10,7 @@ import { BUTTON, DIALOG, FIELD, HINT, LABEL } from '../ui/controls';
 export default function NewPurchaseModal() {
   const { isAddPurchaseOpen, setIsAddPurchaseOpen, addPurchase, isFirebaseConfigured } = useDashboard();
   const { products, isLoading: isLoadingProducts, error: productsError } = useProducts();
+  const { vendors } = useVendors();
 
   const [supplierName, setSupplierName] = useState('');
   const [product, setProduct] = useState(null);
@@ -16,10 +18,56 @@ export default function NewPurchaseModal() {
   const [amount, setAmount] = useState('');
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSupplierListOpen, setIsSupplierListOpen] = useState(false);
+  const [supplierHighlight, setSupplierHighlight] = useState(0);
+  const supplierRef = useRef(null);
+  const supplierListRef = useRef(null);
+
+  // Saved suppliers = the registry rows marked as suppliers.
+  const suppliers = useMemo(
+    () => vendors.filter((v) => v.type === 'supplier'),
+    [vendors]
+  );
+  const filteredSuppliers = useMemo(() => {
+    const q = supplierName.trim().toLowerCase();
+    if (!q) return suppliers;
+    return suppliers.filter(
+      (s) =>
+        String(s.name || '').toLowerCase().includes(q) ||
+        String(s.phone || '').includes(q)
+    );
+  }, [suppliers, supplierName]);
+
+  // Clamped during render, so a shrinking list can never point outside it
+  const activeSupplier = Math.min(supplierHighlight, Math.max(0, filteredSuppliers.length - 1));
+
+  // Close the suggestion list when a tap lands outside the field
+  useEffect(() => {
+    if (!isSupplierListOpen) return;
+    const onDocDown = (e) => {
+      if (supplierRef.current && !supplierRef.current.contains(e.target)) setIsSupplierListOpen(false);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [isSupplierListOpen]);
+
+  // Scroll the highlighted supplier into view
+  useEffect(() => {
+    if (!isSupplierListOpen || !supplierListRef.current) return;
+    supplierListRef.current.children[activeSupplier]?.scrollIntoView({ block: 'nearest' });
+  }, [activeSupplier, isSupplierListOpen]);
 
   if (!isAddPurchaseOpen) return null;
 
-  const close = () => setIsAddPurchaseOpen(false);
+  const close = () => {
+    setIsSupplierListOpen(false);
+    setIsAddPurchaseOpen(false);
+  };
+
+  const pickSupplier = (s) => {
+    setSupplierName(s.name || '');
+    setIsSupplierListOpen(false);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -58,6 +106,7 @@ export default function NewPurchaseModal() {
       }
 
       setSupplierName('');
+      setIsSupplierListOpen(false);
       setProduct(null);
       setQty('');
       setAmount('');
@@ -95,20 +144,69 @@ export default function NewPurchaseModal() {
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className={`${DIALOG.body} overflow-y-auto text-left`}>
-          {/* Supplier Name */}
-          <div>
+          {/* Supplier — one tap from the saved list, or type a one-off name */}
+          <div ref={supplierRef}>
             <label className={LABEL} htmlFor="purchase-supplier">Supplier name</label>
             <div className="relative">
               <Building className="absolute left-3 top-2.5 h-4 w-4 text-ink-subtle" />
               <input
                 id="purchase-supplier"
                 type="text"
-                placeholder="e.g. Krishna Wholesalers"
+                placeholder={suppliers.length ? 'Pick a saved supplier or type a name' : 'e.g. Krishna Wholesalers'}
                 value={supplierName}
-                onChange={(e) => setSupplierName(e.target.value)}
+                autoComplete="off"
+                onChange={(e) => { setSupplierName(e.target.value); setIsSupplierListOpen(true); setSupplierHighlight(0); }}
+                onFocus={() => setIsSupplierListOpen(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setSupplierHighlight(Math.min(activeSupplier + 1, filteredSuppliers.length - 1));
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setSupplierHighlight(Math.max(activeSupplier - 1, 0));
+                  } else if (e.key === 'Enter' && isSupplierListOpen && filteredSuppliers[activeSupplier]) {
+                    e.preventDefault();
+                    pickSupplier(filteredSuppliers[activeSupplier]);
+                  } else if (e.key === 'Escape') {
+                    setIsSupplierListOpen(false);
+                  }
+                }}
                 className={`${FIELD} pl-9`}
               />
+
+              {isSupplierListOpen && suppliers.length > 0 && (
+                <div className="absolute z-20 mt-1 max-h-44 w-full overflow-y-auto rounded-[var(--radius-card)] bg-surface py-1 text-left shadow-e3 ring-1 ring-hairline/70">
+                  {filteredSuppliers.length === 0 ? (
+                    <p className="px-3 py-3 text-micro text-ink-subtle">
+                      No saved supplier matches “{supplierName.trim()}” — keep typing to record it as new.
+                    </p>
+                  ) : (
+                    <ul ref={supplierListRef}>
+                      {filteredSuppliers.map((s, i) => (
+                        <li key={s.id}>
+                          <button
+                            type="button"
+                            onMouseEnter={() => setSupplierHighlight(i)}
+                            onClick={() => pickSupplier(s)}
+                            className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors cursor-pointer ${
+                              i === activeSupplier ? 'bg-surface-2' : 'hover:bg-surface-2/60'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-body font-bold text-ink">{s.name}</p>
+                              {s.phone && <p className="num text-micro text-ink-subtle">{s.phone}</p>}
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
+            {suppliers.length === 0 && (
+              <p className={HINT}>Save suppliers under Parties to pick them here.</p>
+            )}
           </div>
 
           {/* Product picker (searchable dropdown from database) */}
