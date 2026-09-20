@@ -42,6 +42,16 @@
   --color-warn-bright: #fcd34d;
   --color-danger-bright: #fda4af;
 
+  /* Chart ink. Its own names because a line drawn on a panel needs different
+     ink from a card edge: the grid, the stronger zero line and crosshair,
+     the axis labels, and the three series the legend and tooltip repeat. */
+  --color-chart-grid: #e2e8f0;
+  --color-chart-grid-strong: #cbd5e1;
+  --color-chart-label: #94a3b8;
+  --color-series-sales: #4f46e5;
+  --color-series-expense: #f43f5e;
+  --color-series-profit: #059669;
+
   /* Elevation: ambient + contact shadow per level */
   --shadow-e1: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
   --shadow-e2: 0 2px 4px -1px rgb(16 24 40 / 0.06), 0 6px 16px -4px rgb(16 24 40 / 0.1);
@@ -65,6 +75,60 @@
   --text-micro--letter-spacing: 0.01em;
 
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ============================================================================
+   OLED dark palette — the same token names, a second block. Chosen in
+   Settings and applied by src/lib/theme.js as data-theme="oled" on <html>,
+   so every surface utility resolves to these values with no dark: variants.
+
+   Canvas is true black (the point of the setting); cards sit a hair above it
+   so they still read as cards; chrome sits higher again so the tooltip and
+   the dialog headers cannot disappear into the black behind them.
+
+   Brand and the money semantics keep their light values: those shades were
+   chosen for contrast against the surface they sit on, and a button's white
+   label or a green amount reads the same on black. Only the ink, the
+   surfaces and the chart change.
+   ============================================================================ */
+[data-theme='oled'] {
+  color-scheme: dark;
+
+  --color-canvas: #000000;
+  --color-surface: #0b0b0e;
+  --color-surface-2: #16161a;
+  --color-surface-3: #202027;
+  --color-hairline: #26262e;
+
+  --color-ink: #f2f2f5;
+  --color-ink-muted: #a3a3af;
+  --color-ink-subtle: #74747f;
+
+  --color-brand-deep: #17171f;
+
+  --color-scrim: rgb(0 0 0 / 0.72);
+
+  /* Shadows read as nothing on black, so elevation leans on the surface
+     steps and the hairline; these only keep overlays from looking flat. */
+  --shadow-e1: 0 1px 2px rgb(0 0 0 / 0.6), 0 1px 3px rgb(0 0 0 / 0.5);
+  --shadow-e2: 0 2px 4px -1px rgb(0 0 0 / 0.6), 0 6px 16px -4px rgb(0 0 0 / 0.7);
+  --shadow-e3: 0 12px 32px -8px rgb(0 0 0 / 0.85), 0 2px 8px -2px rgb(0 0 0 / 0.6);
+
+  /* Series one step brighter and grid ink one step dimmer: the light-mode
+     shades either glare or vanish against black. */
+  --color-chart-grid: #26262e;
+  --color-chart-grid-strong: #3c3c46;
+  --color-chart-label: #8f8f9c;
+  --color-series-sales: #818cf8;
+  --color-series-expense: #fb7185;
+  --color-series-profit: #34d399;
+
+  ::-webkit-scrollbar-thumb {
+    background: #3a3a44;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4a4a56;
+  }
 }
 
 /* Money and any figure that must not jitter as digits change. */

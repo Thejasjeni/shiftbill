@@ -15,10 +15,14 @@ import Money from '../ui/Money';
 import Surface from '../ui/Surface';
 import TrendPill from '../ui/TrendPill';
 
+// Token names, not shades: the dark palette brightens these three and dims
+// the grid, and the same value drives the lines, the dots, the legend and
+// the tooltip swatches. Applied through `style` because a CSS variable in an
+// SVG presentation attribute is not substituted.
 const SERIES = [
-  { key: 'amount', label: 'Sales', color: '#4F46E5' },
-  { key: 'expense', label: 'Expense', color: '#F43F5E' },
-  { key: 'profit', label: 'Profit', color: '#059669' }
+  { key: 'amount', label: 'Sales', color: 'var(--color-series-sales)' },
+  { key: 'expense', label: 'Expense', color: 'var(--color-series-expense)' },
+  { key: 'profit', label: 'Profit', color: 'var(--color-series-profit)' }
 ];
 
 const EMPTY_SIZE = { width: 560, height: 200 };
@@ -226,8 +230,8 @@ export default function SalesChartSection() {
           >
             <defs>
               <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={SERIES[0].color} stopOpacity="0.22" />
-                <stop offset="100%" stopColor={SERIES[0].color} stopOpacity="0.0" />
+                <stop offset="0%" style={{ stopColor: SERIES[0].color }} stopOpacity="0.22" />
+                <stop offset="100%" style={{ stopColor: SERIES[0].color }} stopOpacity="0.0" />
               </linearGradient>
             </defs>
 
@@ -238,7 +242,7 @@ export default function SalesChartSection() {
                 y1={geometry.yFor(0)}
                 x2={geometry.width - PLOT_PADDING.right}
                 y2={geometry.yFor(0)}
-                stroke="#E2E8F0"
+                style={{ stroke: 'var(--color-chart-grid)' }}
                 strokeWidth="1"
               />
             )}
@@ -254,7 +258,7 @@ export default function SalesChartSection() {
                     y1={y}
                     x2={geometry.width - PLOT_PADDING.right}
                     y2={y}
-                    stroke={isZero && scale.min < 0 ? '#CBD5E1' : '#F1F5F9'}
+                    style={{ stroke: isZero && scale.min < 0 ? 'var(--color-chart-grid-strong)' : 'var(--color-chart-grid)' }}
                     strokeWidth="1"
                     strokeDasharray={isZero && scale.min < 0 ? undefined : '4 4'}
                   />
@@ -263,7 +267,7 @@ export default function SalesChartSection() {
                     y={y + 3}
                     textAnchor="end"
                     fontSize="9"
-                    fill="#94A3B8"
+                    style={{ fill: 'var(--color-chart-label)' }}
                   >
                     {compactINR(tick)}
                   </text>
@@ -284,7 +288,7 @@ export default function SalesChartSection() {
                   width={geometry.barWidth}
                   height={height}
                   rx="2"
-                  fill={SERIES[1].color}
+                  style={{ fill: SERIES[1].color }}
                   fillOpacity="0.45"
                 />
               );
@@ -296,7 +300,7 @@ export default function SalesChartSection() {
               <path
                 d={salesPath}
                 fill="none"
-                stroke={SERIES[0].color}
+                style={{ stroke: SERIES[0].color }}
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -308,7 +312,7 @@ export default function SalesChartSection() {
               <path
                 d={profitPath}
                 fill="none"
-                stroke={SERIES[2].color}
+                style={{ stroke: SERIES[2].color }}
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -322,7 +326,7 @@ export default function SalesChartSection() {
                 y1={PLOT_PADDING.top}
                 x2={activePoint.x}
                 y2={geometry.height - PLOT_PADDING.bottom}
-                stroke="#CBD5E1"
+                style={{ stroke: 'var(--color-chart-grid-strong)' }}
                 strokeWidth="1"
                 strokeDasharray="3 3"
               />
@@ -337,16 +341,14 @@ export default function SalesChartSection() {
                     cx={point.x}
                     cy={point.ySales}
                     r={isActive ? 4.5 : 3}
-                    fill="#FFFFFF"
-                    stroke={SERIES[0].color}
+                    style={{ fill: 'var(--color-surface)', stroke: SERIES[0].color }}
                     strokeWidth="2"
                   />
                   <circle
                     cx={point.x}
                     cy={point.yProfit}
                     r={isActive ? 4 : 2.5}
-                    fill="#FFFFFF"
-                    stroke={SERIES[2].color}
+                    style={{ fill: 'var(--color-surface)', stroke: SERIES[2].color }}
                     strokeWidth="1.8"
                   />
                 </g>

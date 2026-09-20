@@ -12,8 +12,20 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <title>SwiftBill - Free & Open Source Billing & Accounting</title>
+    <!-- Replays the palette choice before the first paint. The storage key
+         'swiftbill.theme' and the data-theme attribute are owned by
+         src/lib/theme.js — change this line whenever that file's key
+         changes, so the two cannot drift. Its only job is to get there
+         early enough that a device set to dark never flashes light. -->
+    <script>
+      try {
+        if (localStorage.getItem('swiftbill.theme') === 'oled') {
+          document.documentElement.dataset.theme = 'oled';
+        }
+      } catch (e) { /* blocked store: the default palette */ }
+    </script>
   </head>
-  <body class="bg-[#F8F9FA] text-slate-800 antialiased font-sans selection:bg-indigo-100 selection:text-indigo-900">
+  <body class="bg-canvas text-ink antialiased font-sans selection:bg-[var(--color-brand)]/25 selection:text-ink">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
