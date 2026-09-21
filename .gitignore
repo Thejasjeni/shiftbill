@@ -28,6 +28,9 @@ dist-ssr
 .env.local
 .freebuff/
 
+# Build-time generated (scripts/generate-version.mjs)
+public/version.json
+
 .vercel
 
 # Local agent tooling owned by the machine, not the repo

@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "prebuild": "node scripts/generate-version.mjs",
+  "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
     "migrate:firestore": "node scripts/migrate-supabase-to-firestore.mjs",

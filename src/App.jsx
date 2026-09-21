@@ -3,6 +3,7 @@ import { DashboardProvider, useDashboard } from './context/DashboardContext';
 import TopAppBar from './components/layout/TopAppBar';
 import Sidebar from './components/layout/Sidebar';
 import GlassNav from './components/layout/GlassNav';
+import UpdateBanner from './components/layout/UpdateBanner';
 import FinancialSummaryCards from './components/dashboard/FinancialSummaryCards';
 import SalesChartSection from './components/dashboard/SalesChartSection';
 import QuickReportsGrid from './components/dashboard/QuickReportsGrid';
@@ -95,6 +96,7 @@ function DashboardContent() {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-canvas">
+      <UpdateBanner />
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <TopAppBar />
