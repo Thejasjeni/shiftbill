@@ -5,24 +5,19 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#1E1B4B" />
+    <meta name="theme-color" content="#000000" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <title>SwiftBill - Free & Open Source Billing & Accounting</title>
-    <!-- Replays the palette choice before the first paint. The storage key
-         'swiftbill.theme' and the data-theme attribute are owned by
-         src/lib/theme.js — change this line whenever that file's key
-         changes, so the two cannot drift. Its only job is to get there
-         early enough that a device set to dark never flashes light. -->
+    <title>SwiftBill - Free & Open Source Billing & Accounting</title>    <!-- The app is OLED dark only — the <html> attribute and the theme-color
+         meta tag are owned by src/lib/theme.js, which always sets the same
+         value. This script runs before the first paint so a dark device never
+         flashes light; keep it in sync with theme.js if the palette ever moves.
+         -->
     <script>
-      try {
-        if (localStorage.getItem('swiftbill.theme') === 'oled') {
-          document.documentElement.dataset.theme = 'oled';
-        }
-      } catch (e) { /* blocked store: the default palette */ }
+      document.documentElement.dataset.theme = 'oled';
     </script>
   </head>
   <body class="bg-canvas text-ink antialiased font-sans selection:bg-[var(--color-brand)]/25 selection:text-ink">
