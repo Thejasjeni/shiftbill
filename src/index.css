@@ -11,17 +11,17 @@
   /* Custom 'xs' breakpoint used across the UI (e.g. hidden xs:inline-block) */
   --breakpoint-xs: 30rem; /* 480px */
 
-  /* Surfaces: elevation by name, not by guessing opacities */
-  --color-canvas: #f7f8fa;
-  --color-surface: #ffffff;
-  --color-surface-2: #f2f4f7;
-  --color-surface-3: #e9ecf2;
-  --color-hairline: #e6e8ee;
+  /* Surfaces: elevation by name, not by guessing opacities — OLED-only palette. */
+  --color-canvas: #000000;
+  --color-surface: #0b0b0e;
+  --color-surface-2: #16161a;
+  --color-surface-3: #202027;
+  --color-hairline: #26262e;
 
-  /* Ink */
-  --color-ink: #0d1117;
-  --color-ink-muted: #5b6178;
-  --color-ink-subtle: #8b91a7;
+  /* Ink — light text on the dark surfaces. */
+  --color-ink: #f2f2f5;
+  --color-ink-muted: #a3a3af;
+  --color-ink-subtle: #74747f;
 
   /* Brand + reserved money semantics */
   --color-brand: #4f46e5;
@@ -31,8 +31,8 @@
   --color-warn: #d97706;
   --color-danger: #e11d48;
 
-  /* Scrim: the one overlay shade behind drawers, dialogs and the sheet */
-  --color-scrim: rgb(15 23 42 / 0.6);
+  /* Scrim: the one overlay shade behind drawers, dialogs and the sheet. */
+  --color-scrim: rgb(0 0 0 / 0.72);
 
   /* Bright variants of the money/state colours, for status that sits on the
      dark brand chrome (header, dialog headers, chart tooltip) where the
@@ -42,20 +42,18 @@
   --color-warn-bright: #fcd34d;
   --color-danger-bright: #fda4af;
 
-  /* Chart ink. Its own names because a line drawn on a panel needs different
-     ink from a card edge: the grid, the stronger zero line and crosshair,
-     the axis labels, and the three series the legend and tooltip repeat. */
-  --color-chart-grid: #e2e8f0;
-  --color-chart-grid-strong: #cbd5e1;
-  --color-chart-label: #94a3b8;
-  --color-series-sales: #4f46e5;
-  --color-series-expense: #f43f5e;
-  --color-series-profit: #059669;
+  /* Chart ink — tuned for dark surfaces. */
+  --color-chart-grid: #26262e;
+  --color-chart-grid-strong: #3c3c46;
+  --color-chart-label: #8f8f9c;
+  --color-series-sales: #818cf8;
+  --color-series-expense: #fb7185;
+  --color-series-profit: #34d399;
 
-  /* Elevation: ambient + contact shadow per level */
-  --shadow-e1: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
-  --shadow-e2: 0 2px 4px -1px rgb(16 24 40 / 0.06), 0 6px 16px -4px rgb(16 24 40 / 0.1);
-  --shadow-e3: 0 12px 32px -8px rgb(16 24 40 / 0.16), 0 2px 8px -2px rgb(16 24 40 / 0.06);
+  /* Elevation: shadows tuned for black surfaces. */
+  --shadow-e1: 0 1px 2px rgb(0 0 0 / 0.6), 0 1px 3px rgb(0 0 0 / 0.5);
+  --shadow-e2: 0 2px 4px -1px rgb(0 0 0 / 0.6), 0 6px 16px -4px rgb(0 0 0 / 0.7);
+  --shadow-e3: 0 12px 32px -8px rgb(0 0 0 / 0.85), 0 2px 8px -2px rgb(0 0 0 / 0.6);
 
   --radius-card: 14px;
   --radius-control: 10px;
@@ -77,59 +75,6 @@
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* ============================================================================
-   OLED dark palette — the same token names, a second block. Chosen in
-   Settings and applied by src/lib/theme.js as data-theme="oled" on <html>,
-   so every surface utility resolves to these values with no dark: variants.
-
-   Canvas is true black (the point of the setting); cards sit a hair above it
-   so they still read as cards; chrome sits higher again so the tooltip and
-   the dialog headers cannot disappear into the black behind them.
-
-   Brand and the money semantics keep their light values: those shades were
-   chosen for contrast against the surface they sit on, and a button's white
-   label or a green amount reads the same on black. Only the ink, the
-   surfaces and the chart change.
-   ============================================================================ */
-[data-theme='oled'] {
-  color-scheme: dark;
-
-  --color-canvas: #000000;
-  --color-surface: #0b0b0e;
-  --color-surface-2: #16161a;
-  --color-surface-3: #202027;
-  --color-hairline: #26262e;
-
-  --color-ink: #f2f2f5;
-  --color-ink-muted: #a3a3af;
-  --color-ink-subtle: #74747f;
-
-  --color-brand-deep: #000000;
-
-  --color-scrim: rgb(0 0 0 / 0.72);
-
-  /* Shadows read as nothing on black, so elevation leans on the surface
-     steps and the hairline; these only keep overlays from looking flat. */
-  --shadow-e1: 0 1px 2px rgb(0 0 0 / 0.6), 0 1px 3px rgb(0 0 0 / 0.5);
-  --shadow-e2: 0 2px 4px -1px rgb(0 0 0 / 0.6), 0 6px 16px -4px rgb(0 0 0 / 0.7);
-  --shadow-e3: 0 12px 32px -8px rgb(0 0 0 / 0.85), 0 2px 8px -2px rgb(0 0 0 / 0.6);
-
-  /* Series one step brighter and grid ink one step dimmer: the light-mode
-     shades either glare or vanish against black. */
-  --color-chart-grid: #26262e;
-  --color-chart-grid-strong: #3c3c46;
-  --color-chart-label: #8f8f9c;
-  --color-series-sales: #818cf8;
-  --color-series-expense: #fb7185;
-  --color-series-profit: #34d399;
-
-  ::-webkit-scrollbar-thumb {
-    background: #3a3a44;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #4a4a56;
-  }
-}
 
 /* Money and any figure that must not jitter as digits change. */
 @utility num {
@@ -147,6 +92,7 @@
     font-optical-sizing: auto;
     background-color: var(--color-canvas);
     color: var(--color-ink);
+    color-scheme: dark;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
   }
@@ -202,8 +148,8 @@
   padding: 6px;
   width: fit-content;
   max-width: 420px;
-  /* More opaque base = uniform glass regardless of what sits behind the pill. */
-  background: rgb(255 255 255 / 0.78);
+  /* Dark glass on the always-black surface — opaque enough to look uniform. */
+  background: rgb(38 38 44 / 0.82);
   backdrop-filter: blur(20px) saturate(1);
   -webkit-backdrop-filter: blur(20px) saturate(1);
   touch-action: manipulation;
@@ -216,8 +162,8 @@
   inset: 0;
   border-radius: inherit;
   box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.22),
-    inset 0 1px 0 rgb(255 255 255 / 0.5);
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    inset 0 1px 0 rgb(255 255 255 / 0.12);
   pointer-events: none;
 }
 .glass-nav-pill::after {
@@ -225,7 +171,7 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.18) 0%, transparent 55%);
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.07) 0%, transparent 50%);
   pointer-events: none;
 }
 
@@ -239,9 +185,9 @@
   top: 4px;
   bottom: 4px;
   border-radius: 999px;
-  background: rgb(255 255 255 / 0.9);
+  background: rgb(38 38 46 / 0.92);
   box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.9),
+    inset 0 0 0 1px rgb(255 255 255 / 0.14),
     0 0 14px var(--pod-accent, var(--color-brand));
   transition:
     left 350ms cubic-bezier(0.34, 1.56, 0.64, 1),
@@ -308,27 +254,6 @@
   }
 }
 
-/* OLED: an even dark glass on true black — a single translucent layer with a faint,
-   even top wash (no bright spotlight) so the pill reads as one uniform surface. */
-[data-theme='oled'] .glass-nav-pill {
-  background: rgb(38 38 44 / 0.82);
-  backdrop-filter: blur(20px) saturate(1);
-  -webkit-backdrop-filter: blur(20px) saturate(1);
-}
-[data-theme='oled'] .glass-nav-pill::before {
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.08),
-    inset 0 1px 0 rgb(255 255 255 / 0.12);
-}
-[data-theme='oled'] .glass-nav-pill::after {
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.07) 0%, transparent 50%);
-}
-[data-theme='oled'] .glass-nav-pod {
-  background: rgb(38 38 46 / 0.92);
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.14),
-    0 0 14px var(--pod-accent, var(--color-brand));
-}
 
 @media (prefers-reduced-motion: reduce) {
   .glass-nav-pod {

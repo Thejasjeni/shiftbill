@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { Building2, Moon, Percent } from 'lucide-react';
+import { Building2, Percent } from 'lucide-react';
 import { useDashboard } from '../../context/DashboardContext';
 import Surface from '../ui/Surface';
 import { FIELD, LABEL, HINT } from '../ui/controls';
-import { THEMES, getStoredTheme, saveTheme } from '../../lib/theme';
 
 // What the profile form says about the edit just made. Nothing is shown until
 // there is one, so the form opens without a status it hasn't earned.
@@ -18,8 +17,6 @@ export default function SettingsView() {
   const { businessInfo, setBusinessInfo, profileSaveState, profileSaveError } = useDashboard();
   // Appearance is this device's, so it is state here and never part of the
   // profile the form saves.
-  const [theme, setTheme] = useState(getStoredTheme);
-
   // One updater for every field, so a new setting is one line in the markup.
   const set = (key) => (e) => {
     const value = e.target.type === 'number' ? Number(e.target.value) || 0 : e.target.value;
@@ -142,41 +139,6 @@ export default function SettingsView() {
             </div>
           </div>
         </div>
-      </Surface>
-
-      {/* Appearance — device-local, so it sits outside the saved profile */}
-      <Surface className="space-y-3">
-        <h2 className="flex items-center gap-2 text-body font-bold uppercase tracking-wider text-ink">
-          <Moon className="h-4 w-4 text-[var(--color-brand)]" />
-          <span>Appearance</span>
-        </h2>
-
-        <div
-          role="group"
-          aria-label="Colour theme"
-          className="inline-flex items-center rounded-[var(--radius-control)] bg-surface-2 p-0.5 ring-1 ring-hairline/70"
-        >
-          {THEMES.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => setTheme(saveTheme(option.id))}
-              aria-pressed={theme === option.id}
-              className={`rounded-lg px-4 py-1.5 text-micro font-bold transition-all cursor-pointer ${
-                theme === option.id
-                  ? 'bg-[var(--color-brand)] text-white shadow-e1'
-                  : 'text-ink-muted hover:text-ink'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-
-        <p className={HINT}>
-          OLED dark turns the screen true black — easier on the eyes at night and lighter on the battery.
-          Saved on this device only.
-        </p>
       </Surface>
 
       {/* Licence & data privacy */}
