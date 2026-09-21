@@ -25,7 +25,7 @@
 
   /* Brand + reserved money semantics */
   --color-brand: #4f46e5;
-  --color-brand-deep: #1e1b4b;
+  --color-brand-deep: #000000;
   --color-in: #059669;
   --color-out: #7c3aed;
   --color-warn: #d97706;
@@ -104,7 +104,7 @@
   --color-ink-muted: #a3a3af;
   --color-ink-subtle: #74747f;
 
-  --color-brand-deep: #17171f;
+  --color-brand-deep: #000000;
 
   --color-scrim: rgb(0 0 0 / 0.72);
 
