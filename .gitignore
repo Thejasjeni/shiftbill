@@ -29,3 +29,10 @@ dist-ssr
 .freebuff/
 
 .vercel
+
+# Local agent tooling owned by the machine, not the repo
+.agents/
+.claude/
+design/
+design/*
+skills-lock.json
