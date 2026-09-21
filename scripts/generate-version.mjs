@@ -1,7 +1,8 @@
 // Build-time hook: writes public/version.json with the current git short SHA.
-// The Android APK (and the site itself) fetch this file to learn which build is
-// current; src/lib/updateCheck.js compares it against the SHA baked into its
-// own bundle. Runs from the "build" npm script via Vite's closeBundle hook.
+// Published with the site, it is the canonical "which build is current" answer:
+// src/lib/updateCheck.js fetches it from the live origin and compares it against
+// the SHA baked into its own bundle. Runs from the "prebuild" npm script, before
+// Vite copies public/ into dist/.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

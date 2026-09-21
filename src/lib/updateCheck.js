@@ -19,6 +19,12 @@ const SWEEP_KEY = 'swiftbill.updateCheck';
 const DISMISS_KEY = 'swiftbill.updateDismissed';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Canonical source of truth: the published site. Inside the Capacitor WebView
+// a relative /version.json would resolve to the APK's OWN bundled copy — the
+// app would compare itself to itself and never see a release — so the check
+// always targets the live origin explicitly.
+const LIVE_VERSION_URL = 'https://swiftbill-dashboard.vercel.app/version.json';
+
 const readJson = (key) => {
   try {
     return JSON.parse(localStorage.getItem(key)) || {};
@@ -57,7 +63,7 @@ export async function checkForUpdate() {
 
   let latest = null;
   try {
-    const res = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
+    const res = await fetch(`${LIVE_VERSION_URL}?t=${Date.now()}`, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
       if (typeof data.sha === 'string' && data.sha) latest = data.sha;
